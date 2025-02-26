@@ -13,14 +13,14 @@ export function NoteCard({ note }: NoteCardProps) {
   const subject = subjects.find((s) => s.id === note.subjectId);
 
   return (
-    <Link href={`/note/${note.id}`} asChild>
+    <Link href={`/note/${note._id}`} asChild>
       <Pressable style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title} numberOfLines={1}>
             {note.title}
           </Text>
           <Text style={styles.date}>
-            {format(new Date(note.updatedAt), 'MMM d, yyyy')}
+          {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
           </Text>
         </View>
         {subject && (

@@ -1,50 +1,71 @@
-import { create } from 'zustand';
-import { format } from 'date-fns';
+import { create } from "zustand";
+import axios from "axios";
 
 export interface Note {
-  id: string;
+  _id: string; // MongoDB uses _id instead of id
   title: string;
   content: string;
-  subjectId: string;
+  subjectId?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 interface NotesStore {
   notes: Note[];
-  addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateNote: (id: string, note: Partial<Note>) => void;
-  deleteNote: (id: string) => void;
+  fetchNotes: () => Promise<void>;
+  addNote: (note: Omit<Note, "_id" | "createdAt" | "updatedAt">) => Promise<void>;
+  updateNote: (id: string, note: Partial<Note>) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
 }
 
 export const useNotesStore = create<NotesStore>((set) => ({
   notes: [],
-  addNote: (note) => {
-    const now = format(new Date(), 'yyyy-MM-dd HH:mm:ss');
-    set((state) => ({
-      notes: [
-        ...state.notes,
-        {
-          ...note,
-          id: Math.random().toString(36).substring(7),
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-    }));
+
+  // ✅ Fetch notes from backend
+  fetchNotes: async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/api/notes");
+      set({ notes: response.data });
+    } catch (error) {
+      console.error("Error fetching notes:", error);
+    }
   },
-  updateNote: (id, updatedNote) => {
-    set((state) => ({
-      notes: state.notes.map((note) =>
-        note.id === id
-          ? { ...note, ...updatedNote, updatedAt: format(new Date(), 'yyyy-MM-dd HH:mm:ss') }
-          : note
-      ),
-    }));
+
+  // ✅ Add a new note via backend
+  addNote: async (note) => {
+    try {
+      const response = await axios.post("http://localhost:5000/api/notes", note);
+      set((state) => ({
+        notes: [...state.notes, response.data],
+      }));
+    } catch (error) {
+      console.error("Error adding note:", error);
+    }
   },
-  deleteNote: (id) => {
-    set((state) => ({
-      notes: state.notes.filter((note) => note.id !== id),
-    }));
+
+  // ✅ Update note in backend
+  updateNote: async (id, updatedNote) => {
+    try {
+      await axios.patch(`http://localhost:5000/api/notes/${id}`, updatedNote);
+      set((state) => ({
+        notes: state.notes.map((note) =>
+          note._id === id ? { ...note, ...updatedNote } : note
+        ),
+      }));
+    } catch (error) {
+      console.error("Error updating note:", error);
+    }
+  },
+
+  // ✅ Delete note in backend
+  deleteNote: async (id) => {
+    try {
+      await axios.delete(`http://localhost:5000/api/notes/${id}`);
+      set((state) => ({
+        notes: state.notes.filter((note) => note._id !== id),
+      }));
+    } catch (error) {
+      console.error("Error deleting note:", error);
+    }
   },
 }));

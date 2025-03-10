@@ -6,6 +6,8 @@ export interface Note {
   title: string;
   content: string;
   subjectId?: string;
+  audioUrl?: string;
+  transcript?: string;
   createdAt: string;
   updatedAt: string;
 }

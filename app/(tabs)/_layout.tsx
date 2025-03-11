@@ -25,12 +25,21 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tasks"
+        options={{
+          title: 'Tasks',
+          tabBarIcon: ({ size, color }) => (
+            <Ionicons name="checkbox" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="subjects"
         options={{
           title: 'Subjects',
           headerTitle: 'My Subjects',
           tabBarIcon: ({ size, color }) => (
-            <Ionicons name="library" size={size} color={color} />
+            <Ionicons name="bookmarks" size={size} color={color} />
           ),
         }}
       />

@@ -1,37 +1,71 @@
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useNotesStore } from '../../store/notes';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 
 export default function CalendarScreen() {
   const notes = useNotesStore((state) => state.notes);
   
-  // Group notes by date
+  // Group notes by date with validation
   const notesByDate = notes.reduce((acc, note) => {
-    const date = format(new Date(note.createdAt), 'yyyy-MM-dd');
-    if (!acc[date]) {
-      acc[date] = [];
+    try {
+      const noteDate = new Date(note.createdAt);
+      if (!isValid(noteDate)) {
+        console.warn('Invalid date found:', note.createdAt);
+        return acc;
+      }
+      const date = format(noteDate, 'yyyy-MM-dd');
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(note);
+    } catch (error) {
+      console.warn('Error processing note date:', error);
     }
-    acc[date].push(note);
     return acc;
   }, {} as Record<string, typeof notes>);
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      if (!isValid(date)) return 'Invalid date';
+      return format(date, 'EEEE, MMMM d, yyyy');
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const formatTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      if (!isValid(date)) return '--:--';
+      return format(date, 'h:mm a');
+    } catch {
+      return '--:--';
+    }
+  };
 
   return (
     <View style={styles.container}>
       {Object.entries(notesByDate).map(([date, dateNotes]) => (
         <View key={date} style={styles.dateGroup}>
           <Text style={styles.dateHeader}>
-            {format(new Date(date), 'EEEE, MMMM d, yyyy')}
+            {formatDate(date)}
           </Text>
           {dateNotes.map((note) => (
-            <View key={note.id} style={styles.noteItem}>
+            <View key={note._id} style={styles.noteItem}>
               <Text style={styles.noteTime}>
-                {format(new Date(note.createdAt), 'h:mm a')}
+                {formatTime(note.createdAt)}
               </Text>
               <Text style={styles.noteTitle}>{note.title}</Text>
             </View>
           ))}
         </View>
       ))}
+      {Object.keys(notesByDate).length === 0 && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>No notes yet</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -82,5 +116,14 @@ const styles = StyleSheet.create({
   noteTitle: {
     fontSize: 16,
     flex: 1,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#8E8E93',
   },
 });

@@ -2,59 +2,61 @@ const express = require("express");
 const router = express.Router();
 const Note = require("../models/Note");
 
-// ✅ Get All Notes
+// Get all notes
 router.get("/", async (req, res) => {
   try {
-    const notes = await Note.find();
+    const notes = await Note.find().sort({ createdAt: -1 });
     res.json(notes);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: error.message });
   }
 });
 
-// ✅ Create a New Note (Ensure `updatedAt` is Always Set)
+// Create a note
 router.post("/", async (req, res) => {
+  const note = new Note({
+    title: req.body.title,
+    content: req.body.content
+  });
+
   try {
-    const newNote = new Note({
-      ...req.body,
-      updatedAt: new Date(), // ✅ Fix for Invalid Time Value Error
-    });
-    await newNote.save();
+    const newNote = await note.save();
     res.status(201).json(newNote);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
-// ✅ Update an Existing Note
+// Update a note
 router.patch("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const updatedNote = await Note.findByIdAndUpdate(
-      id,
-      { ...req.body, updatedAt: new Date() }, // ✅ Update Timestamp
-      { new: true }
-    );
-    if (!updatedNote) {
+    const note = await Note.findById(req.params.id);
+    if (!note) {
       return res.status(404).json({ message: "Note not found" });
     }
+
+    if (req.body.title) note.title = req.body.title;
+    if (req.body.content) note.content = req.body.content;
+
+    const updatedNote = await note.save();
     res.json(updatedNote);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
-// ✅ Delete a Note
+// Delete a note
 router.delete("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const deletedNote = await Note.findByIdAndDelete(id);
-    if (!deletedNote) {
+    const note = await Note.findById(req.params.id);
+    if (!note) {
       return res.status(404).json({ message: "Note not found" });
     }
-    res.json({ message: "Note deleted successfully" });
+
+    await note.deleteOne();
+    res.json({ message: "Note deleted" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ message: error.message });
   }
 });
 

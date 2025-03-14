@@ -1,71 +1,86 @@
-import { create } from "zustand";
-import axios from "axios";
+import { create } from 'zustand';
+import axios from 'axios';
+import { API_URL } from '../config';
 
 export interface Note {
-  _id: string; // MongoDB uses _id instead of id
+  _id: string;
   title: string;
   content: string;
-  subjectId?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 interface NotesStore {
   notes: Note[];
+  loading: boolean;
+  error: string | null;
   fetchNotes: () => Promise<void>;
-  addNote: (note: Omit<Note, "_id" | "createdAt" | "updatedAt">) => Promise<void>;
-  updateNote: (id: string, note: Partial<Note>) => Promise<void>;
+  addNote: (note: Omit<Note, '_id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateNote: (id: string, updatedNote: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
 }
 
-export const useNotesStore = create<NotesStore>((set) => ({
+// Create the store
+const useNotesStore = create<NotesStore>((set) => ({
   notes: [],
+  loading: false,
+  error: null,
 
-  // ✅ Fetch notes from backend
   fetchNotes: async () => {
+    set({ loading: true, error: null });
     try {
-      const response = await axios.get("http://localhost:5000/api/notes");
-      set({ notes: response.data });
+      const response = await axios.get(`${API_URL}/api/notes`);
+      set({ notes: response.data, loading: false });
     } catch (error) {
-      console.error("Error fetching notes:", error);
+      console.error('Error fetching notes:', error);
+      set({ error: 'Failed to fetch notes', loading: false });
     }
   },
 
-  // ✅ Add a new note via backend
   addNote: async (note) => {
+    set({ loading: true, error: null });
     try {
-      const response = await axios.post("http://localhost:5000/api/notes", note);
+      const response = await axios.post(`${API_URL}/api/notes`, note);
       set((state) => ({
         notes: [...state.notes, response.data],
+        loading: false
       }));
     } catch (error) {
-      console.error("Error adding note:", error);
+      console.error('Error adding note:', error);
+      set({ error: 'Failed to add note', loading: false });
     }
   },
 
-  // ✅ Update note in backend
   updateNote: async (id, updatedNote) => {
+    set({ loading: true, error: null });
     try {
-      await axios.patch(`http://localhost:5000/api/notes/${id}`, updatedNote);
+      const response = await axios.patch(`${API_URL}/api/notes/${id}`, updatedNote);
       set((state) => ({
         notes: state.notes.map((note) =>
-          note._id === id ? { ...note, ...updatedNote } : note
+          note._id === id ? { ...note, ...response.data } : note
         ),
+        loading: false
       }));
     } catch (error) {
-      console.error("Error updating note:", error);
+      console.error('Error updating note:', error);
+      set({ error: 'Failed to update note', loading: false });
     }
   },
 
-  // ✅ Delete note in backend
   deleteNote: async (id) => {
+    set({ loading: true, error: null });
     try {
-      await axios.delete(`http://localhost:5000/api/notes/${id}`);
+      await axios.delete(`${API_URL}/api/notes/${id}`);
       set((state) => ({
         notes: state.notes.filter((note) => note._id !== id),
+        loading: false
       }));
     } catch (error) {
-      console.error("Error deleting note:", error);
+      console.error('Error deleting note:', error);
+      set({ error: 'Failed to delete note', loading: false });
     }
-  },
+  }
 }));
+
+// Export the store
+export { useNotesStore };

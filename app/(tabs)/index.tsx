@@ -5,6 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNotesStore } from "../../store/notes";
 import { NoteCard } from "../../components/NoteCard";
 import { useEffect, useState } from "react";
+import { TouchableOpacity } from "react-native";
+import { router } from 'expo-router';
 
 export default function NotesScreen() {
   const { notes, fetchNotes } = useNotesStore();
@@ -17,6 +19,10 @@ export default function NotesScreen() {
     };
     loadNotes();
   }, []);
+
+  const handleAddNote = () => {
+    router.push('/create');
+  };
 
   if (loading) {
     return (
@@ -34,11 +40,12 @@ export default function NotesScreen() {
         estimatedItemSize={120}
         contentContainerStyle={styles.list}
       />
-      <Link href="/new-note" asChild>
-        <Pressable style={styles.fab}>
-          <Ionicons name="add" size={24} color="#fff" />
-        </Pressable>
-      </Link>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={handleAddNote}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }

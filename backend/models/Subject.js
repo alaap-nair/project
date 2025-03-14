@@ -1,11 +1,11 @@
 const mongoose = require("mongoose");
 
-const noteSchema = new mongoose.Schema({
-  title: {
+const subjectSchema = new mongoose.Schema({
+  name: {
     type: String,
     required: true
   },
-  content: {
+  color: {
     type: String,
     required: true
   }
@@ -13,4 +13,4 @@ const noteSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model("Note", noteSchema);
+module.exports = mongoose.model("Subject", subjectSchema); 

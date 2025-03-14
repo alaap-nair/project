@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
+import { withExpoSnack } from 'nativewind';
 
-export default function TabLayout() {
+function TabLayout() {
   return (
     <Tabs
       screenOptions={{
@@ -13,6 +14,10 @@ export default function TabLayout() {
         },
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#8E8E93',
+        headerStyle: {
+          backgroundColor: '#fff',
+        },
+        headerTintColor: '#007AFF',
       }}>
       <Tabs.Screen
         name="index"
@@ -57,3 +62,5 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+export default withExpoSnack(TabLayout);

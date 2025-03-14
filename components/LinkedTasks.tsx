@@ -46,7 +46,7 @@ export function LinkedTasks({ noteId, taskIds }: LinkedTasksProps) {
                   {task.title}
                 </Text>
                 <Text style={styles.taskDate}>
-                  {format(new Date(task.dueDate), 'MMM d')}
+                  {task.deadline ? format(new Date(task.deadline), 'MMM d') : 'No deadline'}
                 </Text>
               </View>
               <View style={styles.taskFooter}>

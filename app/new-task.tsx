@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../services/notifications';
 
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low'];
-const CATEGORIES: TaskCategory[] = ['study', 'assignment', 'exam', 'reading', 'project', 'other'];
+const CATEGORIES: TaskCategory[] = ['study', 'homework', 'exam', 'project', 'other'];
 
 const PRIORITY_COLORS = {
   high: '#FF3B30',
@@ -19,9 +19,8 @@ const PRIORITY_COLORS = {
 
 const CATEGORY_COLORS = {
   study: '#5856D6',
-  assignment: '#007AFF',
+  homework: '#007AFF',
   exam: '#FF2D55',
-  reading: '#5AC8FA',
   project: '#FF9500',
   other: '#8E8E93',
 };
@@ -56,19 +55,41 @@ export default function NewTaskScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      alert('Please enter a task title');
+      return;
+    }
 
-    await addTask({
-      title: title.trim(),
-      description: description.trim(),
-      priority,
-      category,
-      dueDate: dueDate.toISOString(),
-      completed: false,
-      reminderTime,
-    });
+    try {
+      console.log('Creating task with deadline:', dueDate.toISOString());
+      
+      await addTask({
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        category,
+        deadline: dueDate.toISOString(),
+        completed: false,
+        reminderTime,
+      });
 
-    router.back();
+      router.back();
+    } catch (error: any) {
+      console.error('Error creating task:', error);
+      
+      // Show a more detailed error message
+      let errorMessage = 'Failed to create task. Please try again.';
+      
+      if (error.message) {
+        if (error.message.includes('Network Error')) {
+          errorMessage = 'Network error: Could not connect to the server. Please check your internet connection and make sure the backend server is running.';
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+      
+      alert(errorMessage);
+    }
   };
 
   return (

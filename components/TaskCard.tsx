@@ -17,32 +17,39 @@ const PRIORITY_COLORS = {
 
 const CATEGORY_COLORS = {
   study: '#5856D6',      // Purple
-  assignment: '#007AFF', // Blue
-  exam: '#FF2D55',      // Pink
-  reading: '#5AC8FA',    // Light Blue
+  homework: '#007AFF',   // Blue
+  exam: '#FF2D55',       // Pink
   project: '#FF9500',    // Orange
   other: '#8E8E93',      // Gray
 };
 
 export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
   const priorityColor = PRIORITY_COLORS[task.priority];
-  const categoryColor = CATEGORY_COLORS[task.category];
-  const dueDate = new Date(task.dueDate);
-  const isOverdue = !task.completed && dueDate < new Date();
+  const categoryColor = CATEGORY_COLORS[task.category] || CATEGORY_COLORS.other;
+  
+  // Add validation to ensure deadline is a valid date
+  const dueDate = task.deadline ? new Date(task.deadline) : null;
+  const isOverdue = !task.completed && dueDate && dueDate < new Date();
 
   const getReminderText = () => {
-    if (!task.reminderTime) return null;
+    if (!task.reminderTime || !dueDate) return null;
     const reminderDate = new Date(dueDate.getTime() - task.reminderTime * 60 * 1000);
     if (reminderDate < new Date()) return null;
-    return `Reminder ${formatDistanceToNow(reminderDate)} before due date`;
+    return formatDistanceToNow(reminderDate) + ' before due date';
   };
+
+  // Get the reminder text once to avoid multiple calculations
+  const reminderText = getReminderText();
 
   return (
     <Link href={`/task/${task._id}`} asChild>
       <Pressable style={styles.container}>
         <Pressable 
           style={[styles.checkbox, task.completed && styles.checkboxChecked]}
-          onPress={() => onToggleComplete(task._id)}
+          onPress={(e) => {
+            e.stopPropagation();
+            onToggleComplete(task._id);
+          }}
         >
           {task.completed && (
             <Ionicons name="checkmark" size={16} color="#FFFFFF" />
@@ -61,9 +68,13 @@ export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
             >
               {task.title}
             </Text>
-            <Text style={[styles.date, isOverdue && styles.overdueDate]}>
-              {format(dueDate, 'MMM d, yyyy')}
-            </Text>
+            {dueDate ? (
+              <Text style={[styles.date, isOverdue && styles.overdueDate]}>
+                {format(dueDate, 'MMM d, yyyy')}
+              </Text>
+            ) : (
+              <Text style={styles.date}>No deadline</Text>
+            )}
           </View>
 
           <Text 
@@ -89,11 +100,11 @@ export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
               </View>
             </View>
 
-            {task.reminderTime && (
+            {task.reminderTime && reminderText && (
               <View style={styles.reminderContainer}>
                 <Ionicons name="notifications" size={14} color="#8E8E93" />
                 <Text style={styles.reminderText}>
-                  {getReminderText()}
+                  Reminder {reminderText}
                 </Text>
               </View>
             )}

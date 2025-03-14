@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import axios from 'axios';
-import { API_URL } from '../config';
+import { API_URL, apiClient } from '../config';
+import { handleApiError } from '../utils/apiUtils';
 
 export interface Note {
   _id: string;
@@ -35,18 +35,21 @@ const useNotesStore = create<NotesStore>((set) => ({
   fetchNotes: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await axios.get(`${API_URL}/api/notes`);
+      const response = await apiClient.get(`/api/notes`);
       set({ notes: response.data, loading: false });
     } catch (error) {
       console.error('Error fetching notes:', error);
-      set({ error: 'Failed to fetch notes', loading: false });
+      const errorMessage = handleApiError(error, 'Failed to fetch notes');
+      set({ error: errorMessage, loading: false });
+      // Return empty array to prevent app crashes
+      set({ notes: [] });
     }
   },
 
   addNote: async (note) => {
     set({ loading: true, error: null });
     try {
-      const response = await axios.post(`${API_URL}/api/notes`, {
+      const response = await apiClient.post(`/api/notes`, {
         ...note,
         taskIds: [],
       });
@@ -54,39 +57,47 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: [...state.notes, response.data],
         loading: false
       }));
+      return response.data;
     } catch (error) {
       console.error('Error adding note:', error);
-      set({ error: 'Failed to add note', loading: false });
+      const errorMessage = handleApiError(error, 'Failed to add note');
+      set({ error: errorMessage, loading: false });
+      throw error;
     }
   },
 
   updateNote: async (id, updatedNote) => {
     set({ loading: true, error: null });
     try {
-      const response = await axios.patch(`${API_URL}/api/notes/${id}`, updatedNote);
+      const response = await apiClient.patch(`/api/notes/${id}`, updatedNote);
       set((state) => ({
         notes: state.notes.map((note) =>
           note._id === id ? { ...note, ...response.data } : note
         ),
         loading: false
       }));
+      return response.data;
     } catch (error) {
       console.error('Error updating note:', error);
-      set({ error: 'Failed to update note', loading: false });
+      const errorMessage = handleApiError(error, 'Failed to update note');
+      set({ error: errorMessage, loading: false });
+      throw error;
     }
   },
 
   deleteNote: async (id) => {
     set({ loading: true, error: null });
     try {
-      await axios.delete(`${API_URL}/api/notes/${id}`);
+      await apiClient.delete(`/api/notes/${id}`);
       set((state) => ({
         notes: state.notes.filter((note) => note._id !== id),
         loading: false
       }));
     } catch (error) {
       console.error('Error deleting note:', error);
-      set({ error: 'Failed to delete note', loading: false });
+      const errorMessage = handleApiError(error, 'Failed to delete note');
+      set({ error: errorMessage, loading: false });
+      throw error;
     }
   },
 
@@ -99,7 +110,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         const taskIds = [...(note.taskIds || [])];
         if (!taskIds.includes(taskId)) {
           taskIds.push(taskId);
-          await axios.patch(`${API_URL}/api/notes/${noteId}`, {
+          await apiClient.patch(`/api/notes/${noteId}`, {
             taskIds,
           });
           
@@ -112,6 +123,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       }
     } catch (error) {
       console.error("Error linking task to note:", error);
+      handleApiError(error, "Error linking task to note");
     }
   },
 
@@ -122,7 +134,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       if (note) {
         const taskIds = (note.taskIds || []).filter(id => id !== taskId);
-        await axios.patch(`${API_URL}/api/notes/${noteId}`, {
+        await apiClient.patch(`/api/notes/${noteId}`, {
           taskIds,
         });
         
@@ -134,6 +146,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       }
     } catch (error) {
       console.error("Error unlinking task from note:", error);
+      handleApiError(error, "Error unlinking task from note");
     }
   },
 }));

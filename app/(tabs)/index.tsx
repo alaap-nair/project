@@ -1,4 +1,4 @@
-import { View, StyleSheet, Pressable, Platform, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, Platform, ActivityIndicator, Text } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,12 +34,21 @@ export default function NotesScreen() {
 
   return (
     <View style={styles.container}>
-      <FlashList
-        data={notes}
-        renderItem={({ item }) => <NoteCard note={item} />}
-        estimatedItemSize={120}
-        contentContainerStyle={styles.list}
-      />
+      {notes.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No notes yet</Text>
+          <TouchableOpacity style={styles.emptyButton} onPress={handleAddNote}>
+            <Text style={styles.emptyButtonText}>Create your first note</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlashList
+          data={notes}
+          renderItem={({ item }) => <NoteCard note={item} />}
+          estimatedItemSize={120}
+          contentContainerStyle={styles.list}
+        />
+      )}
       <TouchableOpacity
         style={styles.fab}
         onPress={handleAddNote}
@@ -88,5 +97,27 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: "#8E8E93",
+    marginBottom: 16,
+  },
+  emptyButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  emptyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

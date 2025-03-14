@@ -25,7 +25,7 @@ export function TranscriptionManager({ onTranscriptionComplete }: TranscriptionM
       });
 
       // Send to backend for transcription
-      const response = await axios.post('http://localhost:5000/api/transcribe', formData, {
+      const response = await axios.post('http://localhost:3000/api/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -34,9 +34,14 @@ export function TranscriptionManager({ onTranscriptionComplete }: TranscriptionM
       if (response.data.transcript) {
         onTranscriptionComplete(response.data.transcript);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Transcription error:', err);
-      setError('Failed to transcribe audio. Please try again.');
+      
+      if (err.response && err.response.data && err.response.data.error) {
+        setError(err.response.data.error);
+      } else {
+        setError('Failed to transcribe audio. Please try again.');
+      }
     } finally {
       setIsTranscribing(false);
     }
@@ -58,21 +63,19 @@ export function TranscriptionManager({ onTranscriptionComplete }: TranscriptionM
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    padding: 16,
+    marginVertical: 10,
   },
   transcribingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 10,
   },
   transcribingText: {
-    marginLeft: 8,
-    color: '#8E8E93',
+    marginLeft: 10,
+    color: '#007AFF',
   },
   errorText: {
-    color: '#FF3B30',
-    marginTop: 8,
-    textAlign: 'center',
+    marginTop: 10,
+    color: 'red',
   },
 }); 

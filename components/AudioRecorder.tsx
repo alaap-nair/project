@@ -12,6 +12,7 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -31,25 +32,26 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  async function startRecording() {
+  const startRecording = async () => {
     try {
+      setError(null);
+      console.log('Requesting permissions..');
       await Audio.requestPermissionsAsync();
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-      setIsRecording(true);
-      setDuration(0);
+      console.log('Starting recording..');
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await recording.startAsync();
+      setRecording(recording);
+      console.log('Recording started');
     } catch (err) {
       console.error('Failed to start recording', err);
+      setError('Failed to start recording. Please check permissions and try again.');
     }
-  }
+  };
 
   async function stopRecording() {
     if (!recording) return;
@@ -87,6 +89,9 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       </TouchableOpacity>
       {isRecording && (
         <Text style={styles.duration}>{formatDuration(duration)}</Text>
+      )}
+      {error && (
+        <Text style={styles.error}>{error}</Text>
       )}
     </View>
   );
@@ -129,5 +134,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#8E8E93',
+  },
+  error: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#FF3B30',
   },
 }); 

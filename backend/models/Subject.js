@@ -1,9 +1,15 @@
 const mongoose = require("mongoose");
 
-const subjectSchema = new mongoose.Schema({
+const SubjectSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'user',
+    required: false
+  },
   name: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   color: {
     type: String,
@@ -13,4 +19,4 @@ const subjectSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model("Subject", subjectSchema); 
+module.exports = mongoose.model("subject", SubjectSchema); 

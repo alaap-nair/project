@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,12 +12,12 @@ type Filter = {
   completed?: boolean;
 };
 
-type SortBy = 'dueDate' | 'priority' | 'category';
+type SortBy = 'deadline' | 'priority' | 'category';
 
 export default function TasksScreen() {
   const { tasks, fetchTasks, toggleTaskCompletion } = useTasksStore();
   const [filter, setFilter] = useState<Filter>({});
-  const [sortBy, setSortBy] = useState<SortBy>('dueDate');
+  const [sortBy, setSortBy] = useState<SortBy>('deadline');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,8 +37,8 @@ export default function TasksScreen() {
 
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     switch (sortBy) {
-      case 'dueDate':
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      case 'deadline':
+        return new Date(a.deadline || 0).getTime() - new Date(b.deadline || 0).getTime();
       case 'priority': {
         const priorityOrder = { high: 0, medium: 1, low: 2 };
         return priorityOrder[a.priority] - priorityOrder[b.priority];
@@ -110,8 +110,8 @@ export default function TasksScreen() {
       <View style={styles.sortContainer}>
         <Text style={styles.sortLabel}>Sort by:</Text>
         <Pressable
-          style={[styles.sortButton, sortBy === 'dueDate' && styles.sortButtonActive]}
-          onPress={() => setSortBy('dueDate')}
+          style={[styles.sortButton, sortBy === 'deadline' && styles.sortButtonActive]}
+          onPress={() => setSortBy('deadline')}
         >
           <Text style={styles.sortButtonText}>Due Date</Text>
         </Pressable>

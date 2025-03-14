@@ -1,41 +1,89 @@
 import { create } from 'zustand';
+import { API_URL, apiClient } from '../config';
+import { handleApiError } from '../utils/apiUtils';
 
 export interface Subject {
-  id: string;
+  _id: string;
   name: string;
   color: string;
 }
 
 interface SubjectsStore {
   subjects: Subject[];
-  addSubject: (subject: Omit<Subject, 'id'>) => void;
-  updateSubject: (id: string, subject: Partial<Subject>) => void;
-  deleteSubject: (id: string) => void;
+  loading: boolean;
+  error: string | null;
+  fetchSubjects: () => Promise<void>;
+  addSubject: (subject: Omit<Subject, '_id'>) => Promise<void>;
+  updateSubject: (id: string, subject: Partial<Subject>) => Promise<void>;
+  deleteSubject: (id: string) => Promise<void>;
 }
 
 export const useSubjectsStore = create<SubjectsStore>((set) => ({
   subjects: [],
-  addSubject: (subject) => {
-    set((state) => ({
-      subjects: [
-        ...state.subjects,
-        {
-          ...subject,
-          id: Math.random().toString(36).substring(7),
-        },
-      ],
-    }));
+  loading: false,
+  error: null,
+
+  fetchSubjects: async () => {
+    set({ loading: true, error: null });
+    try {
+      const response = await apiClient.get(`/api/subjects`);
+      set({ subjects: response.data, loading: false });
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+      const errorMessage = handleApiError(error, 'Failed to fetch subjects');
+      set({ error: errorMessage, loading: false });
+      // Return empty array to prevent app crashes
+      set({ subjects: [] });
+    }
   },
-  updateSubject: (id, updatedSubject) => {
-    set((state) => ({
-      subjects: state.subjects.map((subject) =>
-        subject.id === id ? { ...subject, ...updatedSubject } : subject
-      ),
-    }));
+
+  addSubject: async (subject) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await apiClient.post(`/api/subjects`, subject);
+      set((state) => ({
+        subjects: [...state.subjects, response.data],
+        loading: false
+      }));
+    } catch (error) {
+      console.error('Error adding subject:', error);
+      const errorMessage = handleApiError(error, 'Failed to add subject');
+      set({ error: errorMessage, loading: false });
+      throw error;
+    }
   },
-  deleteSubject: (id) => {
-    set((state) => ({
-      subjects: state.subjects.filter((subject) => subject.id !== id),
-    }));
+
+  updateSubject: async (id, updatedSubject) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await apiClient.put(`/api/subjects/${id}`, updatedSubject);
+      set((state) => ({
+        subjects: state.subjects.map((subject) =>
+          subject._id === id ? { ...subject, ...response.data } : subject
+        ),
+        loading: false
+      }));
+    } catch (error) {
+      console.error('Error updating subject:', error);
+      const errorMessage = handleApiError(error, 'Failed to update subject');
+      set({ error: errorMessage, loading: false });
+      throw error;
+    }
+  },
+
+  deleteSubject: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await apiClient.delete(`/api/subjects/${id}`);
+      set((state) => ({
+        subjects: state.subjects.filter((subject) => subject._id !== id),
+        loading: false
+      }));
+    } catch (error) {
+      console.error('Error deleting subject:', error);
+      const errorMessage = handleApiError(error, 'Failed to delete subject');
+      set({ error: errorMessage, loading: false });
+      throw error;
+    }
   },
 }));

@@ -2,9 +2,11 @@ import { create } from 'zustand';
 import axios from 'axios';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
+import { API_URL, apiClient } from '../config';
+import { handleApiError } from '../utils/apiUtils';
 
 export type TaskPriority = 'high' | 'medium' | 'low';
-export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'project' | 'other';
+export type TaskCategory = 'study' | 'homework' | 'exam' | 'project' | 'other';
 
 export interface Task {
   _id: string;
@@ -12,7 +14,7 @@ export interface Task {
   description: string;
   priority: TaskPriority;
   category: TaskCategory;
-  dueDate: string;
+  deadline: string;
   completed: boolean;
   reminderTime?: number; // minutes before due date
   notificationId?: string;
@@ -22,11 +24,24 @@ export interface Task {
   updatedAt: string;
 }
 
+export type TimeframeFilter = 'today' | 'week' | 'month' | 'all';
+
+export interface SummarizeOptions {
+  category?: TaskCategory;
+  priority?: TaskPriority;
+  completed?: boolean;
+  timeframe?: TimeframeFilter;
+}
+
 interface TasksStore {
   tasks: Task[];
   calendarSyncEnabled: boolean;
   calendarSyncError: string | null;
   calendarSyncRetrying: boolean;
+  summarizing: boolean;
+  summary: string | null;
+  loading: boolean;
+  error: string | null;
   fetchTasks: () => Promise<void>;
   addTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateTask: (id: string, task: Partial<Task>) => Promise<void>;
@@ -40,6 +55,8 @@ interface TasksStore {
   toggleCalendarSync: () => Promise<void>;
   retryCalendarSync: () => Promise<void>;
   clearCalendarSyncError: () => void;
+  summarizeTasks: (options?: SummarizeOptions) => Promise<string>;
+  clearSummary: () => void;
 }
 
 export const useTasksStore = create<TasksStore>((set, get) => ({
@@ -47,18 +64,23 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   calendarSyncEnabled: false,
   calendarSyncError: null,
   calendarSyncRetrying: false,
+  summarizing: false,
+  summary: null,
+  loading: false,
+  error: null,
 
   fetchTasks: async () => {
+    set({ loading: true, error: null });
     try {
-      const response = await axios.get('http://localhost:5000/api/tasks');
-      set({ tasks: response.data });
+      const response = await apiClient.get('/api/tasks');
+      set({ tasks: response.data, loading: false });
 
       // Reschedule notifications for all tasks with reminders
       response.data.forEach(async (task: Task) => {
         if (task.reminderTime && !task.completed) {
           const notificationId = await scheduleTaskReminder(task, task.reminderTime);
           if (notificationId) {
-            await axios.patch(`http://localhost:5000/api/tasks/${task._id}`, {
+            await apiClient.patch(`/api/tasks/${task._id}`, {
               notificationId,
             });
           }
@@ -66,6 +88,10 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       });
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      const errorMessage = handleApiError(error, 'Failed to fetch tasks');
+      set({ error: errorMessage, loading: false });
+      // Return empty array instead of throwing to prevent app crashes
+      set({ tasks: [] });
     }
   },
 
@@ -138,21 +164,58 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   },
 
   addTask: async (task) => {
+    set({ loading: true, error: null });
     try {
+      console.log('Preparing to add task:', task);
+      
       // Schedule reminder if reminderTime is set
-      let notificationId;
+      let notificationId = null;
       if (task.reminderTime) {
-        notificationId = await scheduleTaskReminder(task as Task, task.reminderTime);
+        try {
+          notificationId = await scheduleTaskReminder(task as Task, task.reminderTime);
+          console.log('Scheduled notification with ID:', notificationId);
+        } catch (notificationError) {
+          console.error('Error scheduling notification:', notificationError);
+          // Continue with task creation even if notification fails
+        }
       }
 
-      const response = await axios.post('http://localhost:5000/api/tasks', {
-        ...task,
-        notificationId,
-      });
+      console.log('Sending task to API:', { ...task, notificationId });
+      
+      // Add retry logic for network errors
+      let response;
+      let retries = 3;
+      
+      while (retries > 0) {
+        try {
+          response = await apiClient.post('/api/tasks', {
+            ...task,
+            notificationId,
+          });
+          break; // If successful, break out of the retry loop
+        } catch (error: any) {
+          if (error.message && error.message.includes('Network Error') && retries > 1) {
+            console.log(`Network error, retrying... (${retries - 1} attempts left)`);
+            retries--;
+            // Wait a bit before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            // If it's not a network error or we're out of retries, rethrow
+            throw error;
+          }
+        }
+      }
+
+      if (!response) {
+        throw new Error('Failed to create task after multiple attempts');
+      }
 
       const newTask = response.data;
+      console.log('Task created successfully:', newTask);
+      
       set((state) => ({
         tasks: [...state.tasks, newTask],
+        loading: false
       }));
 
       // Sync with calendar if enabled
@@ -168,8 +231,11 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
           set({ calendarSyncError: 'Failed to sync new task with calendar' });
         }
       }
+      return newTask;
     } catch (error) {
       console.error('Error adding task:', error);
+      const errorMessage = handleApiError(error, 'Failed to add task');
+      set({ error: errorMessage, loading: false });
       throw error;
     }
   },
@@ -177,7 +243,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   updateTask: async (id, updatedTask) => {
     try {
       // Handle reminder updates
-      if ('reminderTime' in updatedTask || 'dueDate' in updatedTask) {
+      if ('reminderTime' in updatedTask || 'deadline' in updatedTask) {
         const state = get();
         const task = state.tasks.find((t) => t._id === id);
         if (task) {
@@ -189,7 +255,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         }
       }
 
-      await axios.patch(`http://localhost:5000/api/tasks/${id}`, updatedTask);
+      await apiClient.patch(`/api/tasks/${id}`, updatedTask);
       
       set((state) => ({
         tasks: state.tasks.map((task) =>
@@ -235,12 +301,13 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         }
       }
 
-      await axios.delete(`http://localhost:5000/api/tasks/${id}`);
+      await apiClient.delete(`/api/tasks/${id}`);
       set((state) => ({
         tasks: state.tasks.filter((task) => task._id !== id),
       }));
     } catch (error) {
       console.error('Error deleting task:', error);
+      throw error;
     }
   },
 
@@ -248,39 +315,58 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
     try {
       const state = get();
       const task = state.tasks.find((t) => t._id === id);
-      if (task) {
-        // Handle reminders
-        if (!task.completed && task.notificationId) {
-          await cancelTaskReminder(id);
-        } else if (task.completed && task.reminderTime) {
-          const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-          if (notificationId) {
-            await axios.patch(`http://localhost:5000/api/tasks/${id}`, {
-              completed: !task.completed,
-              notificationId,
-            });
-          }
-        }
+      if (!task) {
+        console.error('Task not found');
+        return;
+      }
 
-        await axios.patch(`http://localhost:5000/api/tasks/${id}`, {
+      // First update the UI optimistically for better user experience
+      const updatedTask = { ...task, completed: !task.completed };
+      set((state) => ({
+        tasks: state.tasks.map((t) =>
+          t._id === id ? updatedTask : t
+        ),
+      }));
+
+      // Handle reminders
+      if (!task.completed && task.notificationId) {
+        await cancelTaskReminder(id);
+      } else if (task.completed && task.reminderTime) {
+        const notificationId = await scheduleTaskReminder(task, task.reminderTime);
+        if (notificationId) {
+          await apiClient.patch(`/api/tasks/${id}`, {
+            completed: !task.completed,
+            notificationId,
+          });
+        }
+      } else {
+        // Simple completion toggle without notification changes
+        await apiClient.patch(`/api/tasks/${id}`, {
           completed: !task.completed,
         });
-        
-        const updatedTask = { ...task, completed: !task.completed };
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t._id === id ? updatedTask : t
-          ),
-        }));
+      }
 
-        // Sync with calendar if enabled
-        if (get().calendarSyncEnabled) {
-          const calendarService = CalendarService.getInstance();
-          await calendarService.syncTaskWithCalendar(updatedTask);
-        }
+      // Sync with calendar if enabled
+      if (get().calendarSyncEnabled) {
+        const calendarService = CalendarService.getInstance();
+        await calendarService.syncTaskWithCalendar(updatedTask);
       }
     } catch (error) {
       console.error('Error toggling task completion:', error);
+      
+      // Revert the optimistic update if the API call fails
+      const state = get();
+      const originalTask = state.tasks.find((t) => t._id === id);
+      if (originalTask) {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t._id === id ? { ...t, completed: !t.completed } : t
+          ),
+        }));
+      }
+      
+      // Re-throw the error so it can be handled by the UI
+      throw error;
     }
   },
 
@@ -290,7 +376,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       const task = state.tasks.find((t) => t._id === id);
       if (task) {
         const notificationId = await scheduleTaskReminder(task, reminderTime);
-        await axios.patch(`http://localhost:5000/api/tasks/${id}`, {
+        await apiClient.patch(`/api/tasks/${id}`, {
           reminderTime,
           notificationId,
         });
@@ -308,7 +394,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   removeTaskReminder: async (id) => {
     try {
       await cancelTaskReminder(id);
-      await axios.patch(`http://localhost:5000/api/tasks/${id}`, {
+      await apiClient.patch(`/api/tasks/${id}`, {
         reminderTime: null,
         notificationId: null,
       });
@@ -331,7 +417,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         const noteIds = [...(task.noteIds || [])];
         if (!noteIds.includes(noteId)) {
           noteIds.push(noteId);
-          await axios.patch(`http://localhost:5000/api/tasks/${taskId}`, {
+          await apiClient.patch(`/api/tasks/${taskId}`, {
             noteIds,
           });
           
@@ -354,7 +440,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       
       if (task) {
         const noteIds = (task.noteIds || []).filter(id => id !== noteId);
-        await axios.patch(`http://localhost:5000/api/tasks/${taskId}`, {
+        await apiClient.patch(`/api/tasks/${taskId}`, {
           noteIds,
         });
         
@@ -367,5 +453,23 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
     } catch (error) {
       console.error('Error unlinking note from task:', error);
     }
+  },
+
+  summarizeTasks: async (options = {}) => {
+    set({ summarizing: true, summary: null });
+    try {
+      const response = await apiClient.post(`/api/tasks/summarize`, options);
+      const summary = response.data.summary;
+      set({ summary, summarizing: false });
+      return summary;
+    } catch (error) {
+      console.error('Error summarizing tasks:', error);
+      set({ summarizing: false });
+      return 'Failed to generate summary.';
+    }
+  },
+
+  clearSummary: () => {
+    set({ summary: null });
   },
 })); 

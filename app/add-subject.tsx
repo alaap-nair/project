@@ -11,7 +11,7 @@ const COLORS = [
   '#34C759', // Green
   '#5856D6', // Purple
   '#007AFF', // Blue
-  '#5856D6', // Indigo
+  '#4A56E2', // Indigo
   '#AF52DE', // Pink
   '#000000', // Black
 ];
@@ -86,9 +86,9 @@ export default function AddSubjectScreen() {
 
         <Text style={styles.colorLabel}>Color</Text>
         <View style={styles.colorGrid}>
-          {COLORS.map((color) => (
+          {COLORS.map((color, index) => (
             <TouchableOpacity
-              key={color}
+              key={`${color}-${index}`}
               style={[
                 styles.colorOption,
                 { backgroundColor: color },

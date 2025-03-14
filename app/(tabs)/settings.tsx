@@ -1,12 +1,16 @@
-import { View, ScrollView, StyleSheet, Pressable, Switch } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CalendarSettings } from '../../components/CalendarSettings';
+import { TaskSummarizer } from '../../components/TaskSummarizer';
 
 export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
+        <TaskSummarizer />
+        
         <CalendarSettings />
+        
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>Appearance</Text>
           <View style={styles.settingItem}>

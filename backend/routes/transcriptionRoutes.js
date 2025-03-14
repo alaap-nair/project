@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const speech = require('@google-cloud/speech');
 const path = require('path');
 const fs = require('fs');
 
@@ -21,10 +20,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Initialize Google Cloud Speech client
-const speechClient = new speech.SpeechClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
-});
+// Mock transcription responses
+const mockTranscriptions = [
+  "Today we discussed the key concepts of machine learning algorithms.",
+  "The professor explained how neural networks process information through layers.",
+  "Remember to complete the assignment by next Friday.",
+  "The main points from today's lecture include data structures and algorithms.",
+  "Make sure to review the chapter on database normalization before the exam."
+];
 
 router.post('/transcribe', upload.single('audio'), async (req, res) => {
   try {
@@ -32,37 +35,21 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio file provided' });
     }
 
-    // Read the audio file
-    const audioBytes = fs.readFileSync(req.file.path);
-
-    // Configure the request
-    const audio = {
-      content: audioBytes.toString('base64'),
-    };
-    const config = {
-      encoding: 'LINEAR16',
-      sampleRateHertz: 16000,
-      languageCode: 'en-US',
-      enableAutomaticPunctuation: true,
-    };
-    const request = {
-      audio: audio,
-      config: config,
-    };
-
-    // Perform the transcription
-    const [response] = await speechClient.recognize(request);
-    const transcription = response.results
-      .map(result => result.alternatives[0].transcript)
-      .join('\n');
-
     // Clean up the uploaded file
     fs.unlinkSync(req.file.path);
 
-    res.json({ transcript: transcription });
+    // Return a random mock transcription
+    const randomIndex = Math.floor(Math.random() * mockTranscriptions.length);
+    const mockTranscription = mockTranscriptions[randomIndex];
+
+    // Add a small delay to simulate processing time
+    setTimeout(() => {
+      res.json({ transcript: mockTranscription });
+    }, 1000);
+    
   } catch (error) {
     console.error('Transcription error:', error);
-    res.status(500).json({ error: 'Failed to transcribe audio' });
+    res.status(500).json({ error: 'Failed to transcribe audio', details: error.message });
   }
 });
 

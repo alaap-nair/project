@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { AudioRecorder } from './AudioRecorder';
-import axios from 'axios';
+import { apiClient } from '../config';
 
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
@@ -25,7 +25,7 @@ export function TranscriptionManager({ onTranscriptionComplete }: TranscriptionM
       });
 
       // Send to backend for transcription
-      const response = await axios.post('http://localhost:3000/api/transcribe', formData, {
+      const response = await apiClient.post('/api/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

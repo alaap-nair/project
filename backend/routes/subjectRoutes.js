@@ -151,7 +151,7 @@ router.delete("/:id", async (req, res) => {
     // }
 
     // Delete the subject
-    await Subject.findByIdAndRemove(req.params.id);
+    await Subject.findByIdAndDelete(req.params.id);
 
     // Update tasks with this subject to "other" category
     await Task.updateMany(

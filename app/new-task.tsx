@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Platform, ScrollView, Pressable } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Platform, ScrollView, Pressable, Modal, TouchableOpacity } from 'react-native';
 import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useTasksStore, TaskPriority, TaskCategory } from '../store/tasks';
 import { REMINDER_TIMES } from '../services/notifications';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../services/notifications';
+import { format } from 'date-fns';
 
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low'];
 const CATEGORIES: TaskCategory[] = ['study', 'homework', 'exam', 'project', 'other'];
@@ -92,6 +93,24 @@ export default function NewTaskScreen() {
     }
   };
 
+  const handleDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    if (selectedDate) {
+      setDueDate(selectedDate);
+    }
+  };
+
+  const showDatePickerModal = () => {
+    setShowDatePicker(true);
+  };
+
+  const hideDatePicker = () => {
+    setShowDatePicker(false);
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.form}>
@@ -174,25 +193,45 @@ export default function NewTaskScreen() {
         <Text style={styles.label}>Due Date</Text>
         <Pressable
           style={styles.dateButton}
-          onPress={() => setShowDatePicker(true)}
+          onPress={showDatePickerModal}
         >
           <Ionicons name="calendar" size={20} color="#007AFF" />
           <Text style={styles.dateButtonText}>
-            {dueDate.toLocaleDateString()}
+            {format(dueDate, 'MMMM d, yyyy')}
           </Text>
         </Pressable>
 
-        {showDatePicker && (
+        {Platform.OS === 'ios' ? (
+          <Modal
+            animationType="slide"
+            transparent={true}
+            visible={showDatePicker}
+            onRequestClose={hideDatePicker}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Select Due Date</Text>
+                  <TouchableOpacity onPress={hideDatePicker}>
+                    <Text style={styles.modalDoneButton}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={dueDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={handleDateChange}
+                  style={styles.datePicker}
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : showDatePicker && (
           <DateTimePicker
             value={dueDate}
             mode="date"
             display="default"
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(false);
-              if (selectedDate) {
-                setDueDate(selectedDate);
-              }
-            }}
+            onChange={handleDateChange}
           />
         )}
 
@@ -332,20 +371,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
       },
       android: {
         elevation: 2,
-      },
-      web: {
-        boxShadow: '0 1px 4px rgba(0, 0, 0, 0.1)',
       },
     }),
   },
@@ -382,5 +419,34 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
     fontSize: 14,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  modalDoneButton: {
+    color: '#007AFF',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  datePicker: {
+    height: 200,
   },
 }); 

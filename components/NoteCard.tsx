@@ -1,11 +1,13 @@
-import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform, Alert } from 'react-native';
 import { format } from 'date-fns';
 import { Link } from 'expo-router';
 import type { Note } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
+import { useNotesStore } from '../store/notes';
 import { NoteSummary } from './NoteSummary';
 import { TranscriptionManager } from './TranscriptionManager';
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 
 interface NoteCardProps {
   note: Note;
@@ -13,6 +15,7 @@ interface NoteCardProps {
 
 export function NoteCard({ note }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
+  const { deleteNote } = useNotesStore();
   const subject = subjects.find((s) => s.id === note.subjectId);
   const [showTranscription, setShowTranscription] = useState(false);
 
@@ -22,6 +25,29 @@ export function NoteCard({ note }: NoteCardProps) {
     console.log('Transcription complete:', transcript);
   };
 
+  const handleDeleteNote = (e) => {
+    e.stopPropagation();
+    Alert.alert(
+      "Delete Note",
+      `Are you sure you want to delete "${note.title}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await deleteNote(note._id);
+            } catch (err) {
+              console.error('Error deleting note:', err);
+              Alert.alert('Error', 'Failed to delete note. Please try again.');
+            }
+          } 
+        }
+      ]
+    );
+  };
+
   return (
     <Link href={`/note/${note._id}`} asChild>
       <Pressable style={styles.container}>
@@ -29,9 +55,17 @@ export function NoteCard({ note }: NoteCardProps) {
           <Text style={styles.title} numberOfLines={1}>
             {note.title}
           </Text>
-          <Text style={styles.date}>
-            {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
-          </Text>
+          <View style={styles.headerActions}>
+            <Text style={styles.date}>
+              {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
+            </Text>
+            <Pressable 
+              style={styles.deleteButton}
+              onPress={handleDeleteNote}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+            </Pressable>
+          </View>
         </View>
         {subject && (
           <View style={[styles.subjectTag, { backgroundColor: subject.color + '20' }]}>
@@ -83,6 +117,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 18,
     fontWeight: '600',
@@ -92,6 +130,10 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 14,
     color: '#8E8E93',
+    marginRight: 8,
+  },
+  deleteButton: {
+    padding: 4,
   },
   subjectTag: {
     alignSelf: 'flex-start',

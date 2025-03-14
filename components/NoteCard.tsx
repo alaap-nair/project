@@ -3,6 +3,9 @@ import { format } from 'date-fns';
 import { Link } from 'expo-router';
 import type { Note } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
+import { NoteSummary } from './NoteSummary';
+import { TranscriptionManager } from './TranscriptionManager';
+import { useState } from 'react';
 
 interface NoteCardProps {
   note: Note;
@@ -11,6 +14,13 @@ interface NoteCardProps {
 export function NoteCard({ note }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
   const subject = subjects.find((s) => s.id === note.subjectId);
+  const [showTranscription, setShowTranscription] = useState(false);
+
+  const handleTranscriptionComplete = (transcript: string) => {
+    // Update the note with the transcript
+    // This should be handled by your note update function
+    console.log('Transcription complete:', transcript);
+  };
 
   return (
     <Link href={`/note/${note._id}`} asChild>
@@ -20,7 +30,7 @@ export function NoteCard({ note }: NoteCardProps) {
             {note.title}
           </Text>
           <Text style={styles.date}>
-          {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
+            {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
           </Text>
         </View>
         {subject && (
@@ -30,9 +40,17 @@ export function NoteCard({ note }: NoteCardProps) {
             </Text>
           </View>
         )}
-        <Text style={styles.preview} numberOfLines={2}>
-          {note.content}
-        </Text>
+        {note.transcript ? (
+          <View style={styles.transcriptContainer}>
+            <Text style={styles.transcriptTitle}>Transcript</Text>
+            <Text style={styles.transcriptText} numberOfLines={3}>
+              {note.transcript}
+            </Text>
+          </View>
+        ) : (
+          <TranscriptionManager onTranscriptionComplete={handleTranscriptionComplete} />
+        )}
+        <NoteSummary note={note} />
       </Pressable>
     </Link>
   );
@@ -86,7 +104,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  preview: {
+  transcriptContainer: {
+    marginVertical: 8,
+    padding: 12,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
+  },
+  transcriptTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginBottom: 4,
+  },
+  transcriptText: {
     fontSize: 14,
     color: '#3C3C43',
     lineHeight: 20,

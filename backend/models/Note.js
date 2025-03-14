@@ -8,7 +8,19 @@ const noteSchema = new mongoose.Schema({
   content: {
     type: String,
     required: true
-  }
+  },
+  audioUrl: {
+    type: String
+  },
+  transcript: {
+    type: String
+  },
+  subjectId: {
+    type: String
+  },
+  taskIds: [{
+    type: String
+  }]
 }, {
   timestamps: true
 });

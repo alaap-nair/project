@@ -15,6 +15,7 @@ app.use(cors({
 // ✅ Import Routes
 const noteRoutes = require("./routes/noteRoutes");
 const subjectRoutes = require('./routes/subjectRoutes');
+const transcriptionRoutes = require("./routes/transcriptionRoutes");
 
 // ✅ Connect to MongoDB (Fixed Deprecation Warnings)
 mongoose.connect(process.env.MONGO_URI)
@@ -24,6 +25,7 @@ mongoose.connect(process.env.MONGO_URI)
 // ✅ Use Routes
 app.use("/api/notes", noteRoutes); // Links all note-related routes
 app.use('/api/subjects', subjectRoutes);
+app.use("/api", transcriptionRoutes);
 
 // ✅ Test Route
 app.get("/", (req, res) => {

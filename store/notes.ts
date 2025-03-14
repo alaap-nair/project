@@ -6,6 +6,10 @@ export interface Note {
   _id: string;
   title: string;
   content: string;
+  subjectId?: string;
+  audioUrl?: string;
+  transcript?: string;
+  taskIds: string[];  // Array of linked task IDs
   createdAt: string;
   updatedAt: string;
 }
@@ -18,6 +22,8 @@ interface NotesStore {
   addNote: (note: Omit<Note, '_id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateNote: (id: string, updatedNote: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
+  linkTaskToNote: (noteId: string, taskId: string) => Promise<void>;
+  unlinkTaskFromNote: (noteId: string, taskId: string) => Promise<void>;
 }
 
 // Create the store
@@ -40,7 +46,10 @@ const useNotesStore = create<NotesStore>((set) => ({
   addNote: async (note) => {
     set({ loading: true, error: null });
     try {
-      const response = await axios.post(`${API_URL}/api/notes`, note);
+      const response = await axios.post(`${API_URL}/api/notes`, {
+        ...note,
+        taskIds: [],
+      });
       set((state) => ({
         notes: [...state.notes, response.data],
         loading: false
@@ -79,7 +88,54 @@ const useNotesStore = create<NotesStore>((set) => ({
       console.error('Error deleting note:', error);
       set({ error: 'Failed to delete note', loading: false });
     }
-  }
+  },
+
+  linkTaskToNote: async (noteId: string, taskId: string) => {
+    try {
+      const state = useNotesStore.getState();
+      const note = state.notes.find((n) => n._id === noteId);
+      
+      if (note) {
+        const taskIds = [...(note.taskIds || [])];
+        if (!taskIds.includes(taskId)) {
+          taskIds.push(taskId);
+          await axios.patch(`${API_URL}/api/notes/${noteId}`, {
+            taskIds,
+          });
+          
+          set((state) => ({
+            notes: state.notes.map((n) =>
+              n._id === noteId ? { ...n, taskIds } : n
+            ),
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Error linking task to note:", error);
+    }
+  },
+
+  unlinkTaskFromNote: async (noteId: string, taskId: string) => {
+    try {
+      const state = useNotesStore.getState();
+      const note = state.notes.find((n) => n._id === noteId);
+      
+      if (note) {
+        const taskIds = (note.taskIds || []).filter(id => id !== taskId);
+        await axios.patch(`${API_URL}/api/notes/${noteId}`, {
+          taskIds,
+        });
+        
+        set((state) => ({
+          notes: state.notes.map((n) =>
+            n._id === noteId ? { ...n, taskIds } : n
+          ),
+        }));
+      }
+    } catch (error) {
+      console.error("Error unlinking task from note:", error);
+    }
+  },
 }));
 
 // Export the store

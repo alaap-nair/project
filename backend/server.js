@@ -40,7 +40,70 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => {
     console.error("❌ MongoDB Connection Error:", err);
-    console.log("⚠️ Application will continue but database functionality will be limited");
+    console.log("⚠️ Application will continue but using mock data instead");
+    
+    // Setup mock data routes when MongoDB fails
+    app.get('/api/notes', (req, res) => {
+      console.log('📝 Serving mock notes data');
+      res.json([
+        {
+          _id: 'mock1',
+          title: 'Mock Note 1',
+          content: 'This is a mock note for testing',
+          taskIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          _id: 'mock2',
+          title: 'Mock Note 2',
+          content: 'This is another mock note for testing',
+          taskIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]);
+    });
+    
+    app.get('/api/tasks', (req, res) => {
+      console.log('📝 Serving mock tasks data');
+      res.json([
+        {
+          _id: 'mocktask1',
+          title: 'Mock Task 1',
+          description: 'This is a mock task',
+          priority: 'medium',
+          category: 'study',
+          dueDate: new Date().toISOString(),
+          completed: false
+        },
+        {
+          _id: 'mocktask2',
+          title: 'Mock Task 2',
+          description: 'This is another mock task',
+          priority: 'high',
+          category: 'assignment',
+          dueDate: new Date().toISOString(),
+          completed: false
+        }
+      ]);
+    });
+    
+    app.get('/api/subjects', (req, res) => {
+      console.log('📝 Serving mock subjects data');
+      res.json([
+        {
+          _id: 'mocksubject1',
+          name: 'Mock Subject 1',
+          color: '#FF5733'
+        },
+        {
+          _id: 'mocksubject2',
+          name: 'Mock Subject 2',
+          color: '#33FF57'
+        }
+      ]);
+    });
   });
 
 // ✅ Use Routes

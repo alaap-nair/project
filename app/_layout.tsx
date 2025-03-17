@@ -3,44 +3,58 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { checkServerConnection, showConnectionAlert } from '../utils/apiUtils';
+import { app, firestore } from '../firebase.config';
+import { checkFirebaseConnection, showConnectionAlert } from '../utils/apiUtils';
+import { initializeSampleData } from '../utils/sampleData';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
-  const [isCheckingConnection, setIsCheckingConnection] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
 
   useEffect(() => {
-    const checkConnection = async () => {
+    const initializeApp = async () => {
       try {
-        setIsCheckingConnection(true);
-        const connected = await checkServerConnection();
-        setIsConnected(connected);
+        setIsInitializing(true);
         
-        if (!connected) {
+        // Test Firebase connection
+        const connected = await checkFirebaseConnection();
+        
+        if (connected) {
+          console.log('✅ Firebase connection successful');
+          
+          // Initialize sample data
+          await initializeSampleData();
+        } else {
+          console.error('❌ Firebase connection failed');
           showConnectionAlert();
         }
+        
+        // We'll still set isFirebaseReady to true to allow the app to proceed
+        // Firebase operations will fail gracefully if there are connection issues
+        setIsFirebaseReady(true);
       } catch (error) {
-        console.error('Error checking connection:', error);
-        setIsConnected(false);
+        console.error('❌ Firebase initialization error:', error);
+        setIsFirebaseReady(true);
       } finally {
-        setIsCheckingConnection(false);
+        setIsInitializing(false);
       }
     };
 
-    checkConnection();
+    initializeApp();
   }, []);
 
-  if (isCheckingConnection) {
+  if (isInitializing) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.text}>Connecting to server...</Text>
+        <Text style={styles.text}>Initializing app...</Text>
       </View>
     );
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack
         screenOptions={{
           headerStyle: {
@@ -55,7 +69,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="dark" />
-    </>
+    </GestureHandlerRootView>
   );
 }
 

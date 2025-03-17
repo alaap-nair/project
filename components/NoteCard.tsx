@@ -5,7 +5,9 @@ import type { Note } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
 import { NoteSummary } from './NoteSummary';
 import { TranscriptionManager } from './TranscriptionManager';
+import { AudioPlayer } from './AudioPlayer';
 import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 
 interface NoteCardProps {
   note: Note;
@@ -13,12 +15,11 @@ interface NoteCardProps {
 
 export function NoteCard({ note }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
-  const subject = subjects.find((s) => s.id === note.subjectId);
+  const subject = subjects.find((s) => s._id === note.subjectId);
   const [showTranscription, setShowTranscription] = useState(false);
 
   const handleTranscriptionComplete = (transcript: string) => {
-    // Update the note with the transcript
-    // This should be handled by your note update function
+    // This is now handled directly in the TranscriptionManager component
     console.log('Transcription complete:', transcript);
   };
 
@@ -40,6 +41,19 @@ export function NoteCard({ note }: NoteCardProps) {
             </Text>
           </View>
         )}
+        
+        {/* Audio section */}
+        {note.audioUrl ? (
+          <View style={styles.audioSection}>
+            <View style={styles.audioHeader}>
+              <Ionicons name="musical-note" size={16} color="#007AFF" />
+              <Text style={styles.audioTitle}>Audio Recording</Text>
+            </View>
+            <AudioPlayer audioUri={note.audioUrl} />
+          </View>
+        ) : null}
+        
+        {/* Transcript section */}
         {note.transcript ? (
           <View style={styles.transcriptContainer}>
             <Text style={styles.transcriptTitle}>Transcript</Text>
@@ -48,7 +62,11 @@ export function NoteCard({ note }: NoteCardProps) {
             </Text>
           </View>
         ) : (
-          <TranscriptionManager onTranscriptionComplete={handleTranscriptionComplete} />
+          <TranscriptionManager 
+            onTranscriptionComplete={handleTranscriptionComplete}
+            existingAudioUri={note.audioUrl}
+            noteId={note._id}
+          />
         )}
         <NoteSummary note={note} />
       </Pressable>
@@ -103,6 +121,20 @@ const styles = StyleSheet.create({
   subjectText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  audioSection: {
+    marginVertical: 8,
+  },
+  audioHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  audioTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    marginLeft: 4,
   },
   transcriptContainer: {
     marginVertical: 8,

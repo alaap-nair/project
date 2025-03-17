@@ -11,6 +11,7 @@
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
     "@react-native-community/datetimepicker": "8.2.0",
+    "@react-native-community/slider": "^4.5.6",
     "@react-native-community/voice": "^1.1.9",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
@@ -34,8 +35,9 @@
     "expo-symbols": "^0.2.2",
     "expo-system-ui": "^4.0.7",
     "expo-web-browser": "^14.0.2",
+    "firebase": "^11.4.0",
     "nativewind": "2.0.11",
-    "postcss": "8.4.23",
+    "postcss": "^8.5.3",
     "postcss-import": "^16.1.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

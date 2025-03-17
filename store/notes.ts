@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { API_URL, apiClient } from '../config';
-import { handleApiError } from '../utils/apiUtils';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { firestore } from '../firebase.config';
 
 export interface Note {
   _id: string;
@@ -24,6 +24,8 @@ interface NotesStore {
   deleteNote: (id: string) => Promise<void>;
   linkTaskToNote: (noteId: string, taskId: string) => Promise<void>;
   unlinkTaskFromNote: (noteId: string, taskId: string) => Promise<void>;
+  addAudioToNote: (noteId: string, audioUrl: string) => Promise<void>;
+  addTranscriptToNote: (noteId: string, transcript: string) => Promise<void>;
 }
 
 // Create the store
@@ -35,12 +37,20 @@ const useNotesStore = create<NotesStore>((set) => ({
   fetchNotes: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get(`/api/notes`);
-      set({ notes: response.data, loading: false });
+      const q = query(collection(firestore, 'notes'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const notesData = querySnapshot.docs.map(doc => ({
+        _id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate?.() || new Date(),
+      } as Note));
+      
+      set({ notes: notesData, loading: false });
     } catch (error) {
       console.error('Error fetching notes:', error);
-      const errorMessage = handleApiError(error, 'Failed to fetch notes');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to fetch notes', loading: false });
       // Return empty array to prevent app crashes
       set({ notes: [] });
     }
@@ -49,19 +59,30 @@ const useNotesStore = create<NotesStore>((set) => ({
   addNote: async (note) => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.post(`/api/notes`, {
+      const docRef = await addDoc(collection(firestore, 'notes'), {
         ...note,
-        taskIds: [],
+        taskIds: note.taskIds || [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
+      
+      const newNote = {
+        _id: docRef.id,
+        ...note,
+        taskIds: note.taskIds || [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
       set((state) => ({
-        notes: [...state.notes, response.data],
+        notes: [newNote, ...state.notes],
         loading: false
       }));
-      return response.data;
+      
+      return newNote;
     } catch (error) {
       console.error('Error adding note:', error);
-      const errorMessage = handleApiError(error, 'Failed to add note');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to add note', loading: false });
       throw error;
     }
   },
@@ -69,18 +90,27 @@ const useNotesStore = create<NotesStore>((set) => ({
   updateNote: async (id, updatedNote) => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.patch(`/api/notes/${id}`, updatedNote);
+      const noteRef = doc(firestore, 'notes', id);
+      await updateDoc(noteRef, {
+        ...updatedNote,
+        updatedAt: serverTimestamp()
+      });
+      
       set((state) => ({
         notes: state.notes.map((note) =>
-          note._id === id ? { ...note, ...response.data } : note
+          note._id === id ? { 
+            ...note, 
+            ...updatedNote, 
+            updatedAt: new Date().toISOString() 
+          } : note
         ),
         loading: false
       }));
-      return response.data;
+      
+      return { _id: id, ...updatedNote };
     } catch (error) {
       console.error('Error updating note:', error);
-      const errorMessage = handleApiError(error, 'Failed to update note');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to update note', loading: false });
       throw error;
     }
   },
@@ -88,15 +118,15 @@ const useNotesStore = create<NotesStore>((set) => ({
   deleteNote: async (id) => {
     set({ loading: true, error: null });
     try {
-      await apiClient.delete(`/api/notes/${id}`);
+      await deleteDoc(doc(firestore, 'notes', id));
+      
       set((state) => ({
         notes: state.notes.filter((note) => note._id !== id),
         loading: false
       }));
     } catch (error) {
       console.error('Error deleting note:', error);
-      const errorMessage = handleApiError(error, 'Failed to delete note');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to delete note', loading: false });
       throw error;
     }
   },
@@ -110,9 +140,9 @@ const useNotesStore = create<NotesStore>((set) => ({
         const taskIds = [...(note.taskIds || [])];
         if (!taskIds.includes(taskId)) {
           taskIds.push(taskId);
-          await apiClient.patch(`/api/notes/${noteId}`, {
-            taskIds,
-          });
+          
+          const noteRef = doc(firestore, 'notes', noteId);
+          await updateDoc(noteRef, { taskIds });
           
           set((state) => ({
             notes: state.notes.map((n) =>
@@ -123,7 +153,6 @@ const useNotesStore = create<NotesStore>((set) => ({
       }
     } catch (error) {
       console.error("Error linking task to note:", error);
-      handleApiError(error, "Error linking task to note");
     }
   },
 
@@ -134,9 +163,9 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       if (note) {
         const taskIds = (note.taskIds || []).filter(id => id !== taskId);
-        await apiClient.patch(`/api/notes/${noteId}`, {
-          taskIds,
-        });
+        
+        const noteRef = doc(firestore, 'notes', noteId);
+        await updateDoc(noteRef, { taskIds });
         
         set((state) => ({
           notes: state.notes.map((n) =>
@@ -146,7 +175,62 @@ const useNotesStore = create<NotesStore>((set) => ({
       }
     } catch (error) {
       console.error("Error unlinking task from note:", error);
-      handleApiError(error, "Error unlinking task from note");
+    }
+  },
+
+  addAudioToNote: async (noteId: string, audioUrl: string) => {
+    set({ loading: true, error: null });
+    try {
+      const noteRef = doc(firestore, 'notes', noteId);
+      await updateDoc(noteRef, {
+        audioUrl,
+        updatedAt: serverTimestamp()
+      });
+      
+      set((state) => ({
+        notes: state.notes.map((note) =>
+          note._id === noteId ? { 
+            ...note, 
+            audioUrl, 
+            updatedAt: new Date().toISOString() 
+          } : note
+        ),
+        loading: false
+      }));
+      
+      return { _id: noteId, audioUrl };
+    } catch (error) {
+      console.error('Error adding audio to note:', error);
+      set({ error: 'Failed to add audio to note', loading: false });
+      throw error;
+    }
+  },
+
+  addTranscriptToNote: async (noteId: string, transcript: string) => {
+    set({ loading: true, error: null });
+    try {
+      const noteRef = doc(firestore, 'notes', noteId);
+      await updateDoc(noteRef, {
+        transcript,
+        updatedAt: serverTimestamp()
+      });
+      
+      set((state) => ({
+        notes: state.notes.map((note) =>
+          note._id === noteId ? { 
+            ...note, 
+            transcript, 
+            updatedAt: new Date().toISOString() 
+          } : note
+        ),
+        loading: false
+      }));
+      
+      return { _id: noteId, transcript };
+    } catch (error) {
+      console.error('Error adding transcript to note:', error);
+      set({ error: 'Failed to add transcript to note', loading: false });
+      throw error;
     }
   },
 }));

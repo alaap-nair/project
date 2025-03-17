@@ -1,38 +1,36 @@
-import { apiClient } from '../config';
 import { Alert, Platform } from 'react-native';
+import { FirebaseError } from 'firebase/app';
+import { firestore } from '../firebase.config';
+import { collection, getDocs, query, limit } from 'firebase/firestore';
 
 /**
- * Checks if the backend server is reachable
- * @returns Promise<boolean> - true if server is reachable, false otherwise
+ * Checks if Firebase is reachable
+ * @returns Promise<boolean> - true if Firebase is reachable, false otherwise
  */
-export const checkServerConnection = async (): Promise<boolean> => {
+export const checkFirebaseConnection = async (): Promise<boolean> => {
   try {
-    const response = await apiClient.get('/', { timeout: 5000 });
-    return response.status === 200;
+    // Try to fetch a single document from any collection
+    const q = query(collection(firestore, 'test-connection'), limit(1));
+    await getDocs(q);
+    return true;
   } catch (error) {
-    console.error('Server connection check failed:', error);
+    console.error('Firebase connection check failed:', error);
     return false;
   }
 };
 
 /**
- * Shows an alert with server connection issues and possible solutions
+ * Shows an alert with Firebase connection issues and possible solutions
  */
 export const showConnectionAlert = () => {
-  let message = 'Could not connect to the server. Please check that:';
+  let message = 'Could not connect to Firebase. Please check that:';
   
-  if (Platform.OS === 'ios') {
-    message += '\n\n1. The backend server is running on your computer';
-    message += '\n2. You\'re using the correct URL in config.ts';
-    message += '\n3. If using a physical device, make sure it\'s on the same network as your computer';
-  } else if (Platform.OS === 'android') {
-    message += '\n\n1. The backend server is running on your computer';
-    message += '\n2. You\'re using the correct URL in config.ts';
-    message += '\n3. If using an emulator, make sure to use 10.0.2.2 instead of localhost';
-    message += '\n4. If using a physical device, make sure it\'s on the same network as your computer';
-  } else {
-    message += '\n\n1. The backend server is running';
-    message += '\n2. You\'re using the correct URL in config.ts';
+  message += '\n\n1. You have an active internet connection';
+  message += '\n2. Your Firebase configuration is correct';
+  message += '\n3. Your Firebase project is properly set up';
+  
+  if (Platform.OS === 'web') {
+    message += '\n4. Your browser allows connections to Firebase';
   }
   
   Alert.alert(
@@ -43,22 +41,33 @@ export const showConnectionAlert = () => {
 };
 
 /**
- * Handles API errors in a consistent way
- * @param error - The error object from axios
- * @param fallbackMessage - A fallback message to show if error doesn't have a response
+ * Handles Firebase errors in a consistent way
+ * @param error - The error object from Firebase
+ * @param fallbackMessage - A fallback message to show if error doesn't have a specific code
  */
-export const handleApiError = (error: any, fallbackMessage = 'An error occurred') => {
-  if (error.response) {
-    // The request was made and the server responded with a status code
-    // that falls out of the range of 2xx
-    const serverMessage = error.response.data?.message || fallbackMessage;
-    return serverMessage;
-  } else if (error.request) {
-    // The request was made but no response was received
-    showConnectionAlert();
-    return 'Could not connect to the server';
+export const handleFirebaseError = (error: unknown, fallbackMessage = 'An error occurred'): string => {
+  if (error instanceof FirebaseError) {
+    // Handle specific Firebase error codes
+    switch (error.code) {
+      case 'permission-denied':
+        return 'You don\'t have permission to access this data';
+      case 'unavailable':
+        showConnectionAlert();
+        return 'Firebase service is currently unavailable';
+      case 'not-found':
+        return 'The requested document was not found';
+      case 'already-exists':
+        return 'The document already exists';
+      case 'cancelled':
+        return 'The operation was cancelled';
+      case 'invalid-argument':
+        return 'Invalid data was provided';
+      default:
+        return error.message || fallbackMessage;
+    }
+  } else if (error instanceof Error) {
+    return error.message;
   } else {
-    // Something happened in setting up the request that triggered an Error
     return fallbackMessage;
   }
 }; 

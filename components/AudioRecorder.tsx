@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 
 interface AudioRecorderProps {
-  onRecordingComplete: (uri: string) => void;
+  onRecordingComplete: (uri: string, duration: number) => void;
 }
 
 export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
@@ -13,7 +13,11 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
-
+  const [recordingStatus, setRecordingStatus] = useState<'idle' | 'recording' | 'paused' | 'stopped'>('idle');
+  
+  // Animation for the recording indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
   useEffect(() => {
     return () => {
       if (recording) {
@@ -28,13 +32,33 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       interval = setInterval(() => {
         setDuration((prev) => prev + 1);
       }, 1000);
+      
+      // Start pulsing animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
     }
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      pulseAnim.stopAnimation();
+    };
   }, [isRecording]);
 
   const startRecording = async () => {
     try {
       setError(null);
+      setDuration(0);
       console.log('Requesting permissions..');
       await Audio.requestPermissionsAsync();
       await Audio.setAudioModeAsync({
@@ -46,6 +70,8 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await recording.startAsync();
       setRecording(recording);
+      setIsRecording(true);
+      setRecordingStatus('recording');
       console.log('Recording started');
     } catch (err) {
       console.error('Failed to start recording', err);
@@ -58,14 +84,17 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
     
     try {
       setIsRecording(false);
+      setRecordingStatus('stopped');
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       if (uri) {
-        onRecordingComplete(uri);
+        console.log('Recording stopped, URI:', uri);
+        onRecordingComplete(uri, duration);
       }
       setRecording(null);
     } catch (err) {
       console.error('Failed to stop recording', err);
+      setError('Failed to stop recording. Please try again.');
     }
   }
 
@@ -77,6 +106,25 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.statusContainer}>
+        {isRecording && (
+          <Animated.View 
+            style={[
+              styles.recordingIndicator, 
+              { transform: [{ scale: pulseAnim }] }
+            ]} 
+          />
+        )}
+        <Text style={styles.statusText}>
+          {recordingStatus === 'idle' && 'Ready to record'}
+          {recordingStatus === 'recording' && 'Recording...'}
+          {recordingStatus === 'stopped' && 'Recording complete'}
+        </Text>
+        {isRecording && (
+          <Text style={styles.duration}>{formatDuration(duration)}</Text>
+        )}
+      </View>
+      
       <TouchableOpacity
         style={[styles.recordButton, isRecording && styles.recording]}
         onPress={isRecording ? stopRecording : startRecording}
@@ -87,9 +135,7 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
           color={isRecording ? '#FF3B30' : '#007AFF'}
         />
       </TouchableOpacity>
-      {isRecording && (
-        <Text style={styles.duration}>{formatDuration(duration)}</Text>
-      )}
+      
       {error && (
         <Text style={styles.error}>{error}</Text>
       )}
@@ -102,6 +148,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  recordingIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF3B30',
+    marginRight: 8,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#3A3A3C',
+    fontWeight: '500',
   },
   recordButton: {
     width: 64,
@@ -131,9 +195,10 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.1 }],
   },
   duration: {
-    marginTop: 12,
+    marginLeft: 8,
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#FF3B30',
+    fontWeight: 'bold',
   },
   error: {
     marginTop: 12,

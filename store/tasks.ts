@@ -1,12 +1,11 @@
 import { create } from 'zustand';
-import axios from 'axios';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { firestore } from '../firebase.config';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
-import { API_URL, apiClient } from '../config';
-import { handleApiError } from '../utils/apiUtils';
 
 export type TaskPriority = 'high' | 'medium' | 'low';
-export type TaskCategory = 'study' | 'homework' | 'exam' | 'project' | 'other';
+export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'project' | 'other';
 
 export interface Task {
   _id: string;
@@ -14,7 +13,7 @@ export interface Task {
   description: string;
   priority: TaskPriority;
   category: TaskCategory;
-  deadline: string;
+  dueDate: string;
   completed: boolean;
   reminderTime?: number; // minutes before due date
   notificationId?: string;
@@ -72,15 +71,25 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   fetchTasks: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get('/api/tasks');
-      set({ tasks: response.data, loading: false });
+      const q = query(collection(firestore, 'tasks'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const tasksData = querySnapshot.docs.map(doc => ({
+        _id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate?.() || new Date(),
+      } as Task));
+      
+      set({ tasks: tasksData, loading: false });
 
       // Reschedule notifications for all tasks with reminders
-      response.data.forEach(async (task: Task) => {
+      tasksData.forEach(async (task: Task) => {
         if (task.reminderTime && !task.completed) {
           const notificationId = await scheduleTaskReminder(task, task.reminderTime);
           if (notificationId) {
-            await apiClient.patch(`/api/tasks/${task._id}`, {
+            const taskRef = doc(firestore, 'tasks', task._id);
+            await updateDoc(taskRef, {
               notificationId,
             });
           }
@@ -88,8 +97,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       });
     } catch (error) {
       console.error('Error fetching tasks:', error);
-      const errorMessage = handleApiError(error, 'Failed to fetch tasks');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to fetch tasks', loading: false });
       // Return empty array instead of throwing to prevent app crashes
       set({ tasks: [] });
     }
@@ -180,37 +188,25 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         }
       }
 
-      console.log('Sending task to API:', { ...task, notificationId });
+      console.log('Adding task to Firestore:', { ...task, notificationId });
       
-      // Add retry logic for network errors
-      let response;
-      let retries = 3;
+      const docRef = await addDoc(collection(firestore, 'tasks'), {
+        ...task,
+        noteIds: task.noteIds || [],
+        notificationId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
       
-      while (retries > 0) {
-        try {
-          response = await apiClient.post('/api/tasks', {
-            ...task,
-            notificationId,
-          });
-          break; // If successful, break out of the retry loop
-        } catch (error: any) {
-          if (error.message && error.message.includes('Network Error') && retries > 1) {
-            console.log(`Network error, retrying... (${retries - 1} attempts left)`);
-            retries--;
-            // Wait a bit before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            // If it's not a network error or we're out of retries, rethrow
-            throw error;
-          }
-        }
-      }
-
-      if (!response) {
-        throw new Error('Failed to create task after multiple attempts');
-      }
-
-      const newTask = response.data;
+      const newTask = {
+        _id: docRef.id,
+        ...task,
+        noteIds: task.noteIds || [],
+        notificationId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
       console.log('Task created successfully:', newTask);
       
       set((state) => ({
@@ -234,8 +230,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       return newTask;
     } catch (error) {
       console.error('Error adding task:', error);
-      const errorMessage = handleApiError(error, 'Failed to add task');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to add task', loading: false });
       throw error;
     }
   },
@@ -243,70 +238,93 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   updateTask: async (id, updatedTask) => {
     try {
       // Handle reminder updates
-      if ('reminderTime' in updatedTask || 'deadline' in updatedTask) {
+      if ('reminderTime' in updatedTask || 'dueDate' in updatedTask) {
         const state = get();
         const task = state.tasks.find((t) => t._id === id);
         if (task) {
           const newTask = { ...task, ...updatedTask };
-          if (newTask.reminderTime) {
+          
+          // Cancel existing reminder
+          if (task.notificationId) {
+            await cancelTaskReminder(task._id);
+          }
+          
+          // Schedule new reminder if needed
+          if (newTask.reminderTime && !newTask.completed) {
             const notificationId = await updateTaskReminder(newTask, newTask.reminderTime);
-            updatedTask.notificationId = notificationId;
+            if (notificationId) {
+              updatedTask.notificationId = notificationId;
+            }
+          } else if ('reminderTime' in updatedTask && !updatedTask.reminderTime) {
+            // If reminderTime is explicitly set to null/undefined, remove notification
+            updatedTask.notificationId = null;
           }
         }
       }
-
-      await apiClient.patch(`/api/tasks/${id}`, updatedTask);
+      
+      const taskRef = doc(firestore, 'tasks', id);
+      await updateDoc(taskRef, {
+        ...updatedTask,
+        updatedAt: serverTimestamp()
+      });
       
       set((state) => ({
         tasks: state.tasks.map((task) =>
-          task._id === id ? { ...task, ...updatedTask } : task
+          task._id === id ? { 
+            ...task, 
+            ...updatedTask, 
+            updatedAt: new Date().toISOString() 
+          } : task
         ),
       }));
-
+      
       // Sync with calendar if enabled
       if (get().calendarSyncEnabled) {
         try {
           const state = get();
-          const updatedTaskFull = state.tasks.find(t => t._id === id);
-          if (updatedTaskFull) {
+          const updatedTaskObj = state.tasks.find(t => t._id === id);
+          if (updatedTaskObj) {
             const calendarService = CalendarService.getInstance();
-            const syncSuccess = await calendarService.syncTaskWithCalendar(updatedTaskFull);
-            if (!syncSuccess) {
-              throw new Error('Failed to sync updated task with calendar');
-            }
+            await calendarService.syncTaskWithCalendar(updatedTaskObj);
           }
         } catch (error) {
-          console.error('Calendar sync error:', error);
-          set({ calendarSyncError: 'Failed to sync task update with calendar' });
+          console.error('Calendar sync error during update:', error);
+          set({ calendarSyncError: 'Failed to sync updated task with calendar' });
         }
       }
+      
+      return { _id: id, ...updatedTask };
     } catch (error) {
       console.error('Error updating task:', error);
+      set({ error: 'Failed to update task' });
       throw error;
     }
   },
 
   deleteTask: async (id) => {
     try {
-      // Cancel any existing reminders
-      await cancelTaskReminder(id);
+      const state = get();
+      const task = state.tasks.find(t => t._id === id);
       
-      // Delete from calendar if enabled
-      if (get().calendarSyncEnabled) {
-        const state = get();
-        const task = state.tasks.find(t => t._id === id);
-        if (task) {
-          const calendarService = CalendarService.getInstance();
-          await calendarService.syncTaskWithCalendar({ ...task, completed: true });
+      if (task) {
+        // Cancel notification if exists
+        if (task.notificationId) {
+          await cancelTaskReminder(task._id);
         }
+        
+        // Delete from Firestore
+        await deleteDoc(doc(firestore, 'tasks', id));
+        
+        set((state) => ({
+          tasks: state.tasks.filter((task) => task._id !== id),
+        }));
+        
+        return true;
       }
-
-      await apiClient.delete(`/api/tasks/${id}`);
-      set((state) => ({
-        tasks: state.tasks.filter((task) => task._id !== id),
-      }));
+      return false;
     } catch (error) {
       console.error('Error deleting task:', error);
+      set({ error: 'Failed to delete task' });
       throw error;
     }
   },
@@ -314,58 +332,52 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   toggleTaskCompletion: async (id) => {
     try {
       const state = get();
-      const task = state.tasks.find((t) => t._id === id);
-      if (!task) {
-        console.error('Task not found');
-        return;
-      }
-
-      // First update the UI optimistically for better user experience
-      const updatedTask = { ...task, completed: !task.completed };
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t._id === id ? updatedTask : t
-        ),
-      }));
-
-      // Handle reminders
-      if (!task.completed && task.notificationId) {
-        await cancelTaskReminder(id);
-      } else if (task.completed && task.reminderTime) {
-        const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-        if (notificationId) {
-          await apiClient.patch(`/api/tasks/${id}`, {
-            completed: !task.completed,
-            notificationId,
-          });
-        }
-      } else {
-        // Simple completion toggle without notification changes
-        await apiClient.patch(`/api/tasks/${id}`, {
-          completed: !task.completed,
-        });
-      }
-
-      // Sync with calendar if enabled
-      if (get().calendarSyncEnabled) {
-        const calendarService = CalendarService.getInstance();
-        await calendarService.syncTaskWithCalendar(updatedTask);
-      }
-    } catch (error) {
-      console.error('Error toggling task completion:', error);
+      const task = state.tasks.find(t => t._id === id);
       
-      // Revert the optimistic update if the API call fails
-      const state = get();
-      const originalTask = state.tasks.find((t) => t._id === id);
-      if (originalTask) {
+      if (task) {
+        const completed = !task.completed;
+        
+        // Update in Firestore
+        const taskRef = doc(firestore, 'tasks', id);
+        await updateDoc(taskRef, {
+          completed,
+          updatedAt: serverTimestamp()
+        });
+        
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t._id === id ? { ...t, completed: !t.completed } : t
+            t._id === id ? { ...t, completed, updatedAt: new Date().toISOString() } : t
           ),
         }));
+        
+        // Handle notification based on completion status
+        if (completed && task.notificationId) {
+          await cancelTaskReminder(task._id);
+        } else if (!completed && task.reminderTime) {
+          const notificationId = await scheduleTaskReminder(task, task.reminderTime);
+          if (notificationId) {
+            await updateDoc(taskRef, { notificationId });
+          }
+        }
+        
+        // Sync with calendar if enabled
+        if (get().calendarSyncEnabled) {
+          try {
+            const updatedTask = { ...task, completed };
+            const calendarService = CalendarService.getInstance();
+            await calendarService.syncTaskWithCalendar(updatedTask);
+          } catch (error) {
+            console.error('Calendar sync error during completion toggle:', error);
+            set({ calendarSyncError: 'Failed to sync task completion status with calendar' });
+          }
+        }
+        
+        return completed;
       }
-      
-      // Re-throw the error so it can be handled by the UI
+      return false;
+    } catch (error) {
+      console.error('Error toggling task completion:', error);
+      set({ error: 'Failed to update task completion status' });
       throw error;
     }
   },
@@ -373,103 +385,259 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   setTaskReminder: async (id, reminderTime) => {
     try {
       const state = get();
-      const task = state.tasks.find((t) => t._id === id);
+      const task = state.tasks.find(t => t._id === id);
+      
       if (task) {
+        // Cancel existing reminder if any
+        if (task.notificationId) {
+          await cancelTaskReminder(task._id);
+        }
+        
+        // Schedule new reminder
         const notificationId = await scheduleTaskReminder(task, reminderTime);
-        await apiClient.patch(`/api/tasks/${id}`, {
+        
+        // Update in Firestore
+        const taskRef = doc(firestore, 'tasks', id);
+        await updateDoc(taskRef, {
           reminderTime,
           notificationId,
+          updatedAt: serverTimestamp()
         });
+        
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t._id === id ? { ...t, reminderTime, notificationId } : t
+            t._id === id ? { 
+              ...t, 
+              reminderTime, 
+              notificationId, 
+              updatedAt: new Date().toISOString() 
+            } : t
           ),
         }));
+        
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error setting task reminder:', error);
+      set({ error: 'Failed to set task reminder' });
+      throw error;
     }
   },
 
   removeTaskReminder: async (id) => {
     try {
-      await cancelTaskReminder(id);
-      await apiClient.patch(`/api/tasks/${id}`, {
-        reminderTime: null,
-        notificationId: null,
-      });
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t._id === id ? { ...t, reminderTime: null, notificationId: null } : t
-        ),
-      }));
+      const state = get();
+      const task = state.tasks.find(t => t._id === id);
+      
+      if (task && task.notificationId) {
+        // Cancel notification
+        await cancelTaskReminder(task._id);
+        
+        // Update in Firestore
+        const taskRef = doc(firestore, 'tasks', id);
+        await updateDoc(taskRef, {
+          reminderTime: null,
+          notificationId: null,
+          updatedAt: serverTimestamp()
+        });
+        
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t._id === id ? { 
+              ...t, 
+              reminderTime: null, 
+              notificationId: null, 
+              updatedAt: new Date().toISOString() 
+            } : t
+          ),
+        }));
+        
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Error removing task reminder:', error);
+      set({ error: 'Failed to remove task reminder' });
+      throw error;
     }
   },
 
-  linkNoteToTask: async (taskId: string, noteId: string) => {
+  linkNoteToTask: async (taskId, noteId) => {
     try {
       const state = get();
-      const task = state.tasks.find((t) => t._id === taskId);
+      const task = state.tasks.find(t => t._id === taskId);
       
       if (task) {
         const noteIds = [...(task.noteIds || [])];
         if (!noteIds.includes(noteId)) {
           noteIds.push(noteId);
-          await apiClient.patch(`/api/tasks/${taskId}`, {
+          
+          // Update in Firestore
+          const taskRef = doc(firestore, 'tasks', taskId);
+          await updateDoc(taskRef, {
             noteIds,
+            updatedAt: serverTimestamp()
           });
           
           set((state) => ({
             tasks: state.tasks.map((t) =>
-              t._id === taskId ? { ...t, noteIds } : t
+              t._id === taskId ? { 
+                ...t, 
+                noteIds, 
+                updatedAt: new Date().toISOString() 
+              } : t
             ),
           }));
         }
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error linking note to task:', error);
+      set({ error: 'Failed to link note to task' });
+      throw error;
     }
   },
 
-  unlinkNoteFromTask: async (taskId: string, noteId: string) => {
+  unlinkNoteFromTask: async (taskId, noteId) => {
     try {
       const state = get();
-      const task = state.tasks.find((t) => t._id === taskId);
+      const task = state.tasks.find(t => t._id === taskId);
       
       if (task) {
         const noteIds = (task.noteIds || []).filter(id => id !== noteId);
-        await apiClient.patch(`/api/tasks/${taskId}`, {
+        
+        // Update in Firestore
+        const taskRef = doc(firestore, 'tasks', taskId);
+        await updateDoc(taskRef, {
           noteIds,
+          updatedAt: serverTimestamp()
         });
         
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t._id === taskId ? { ...t, noteIds } : t
+            t._id === taskId ? { 
+              ...t, 
+              noteIds, 
+              updatedAt: new Date().toISOString() 
+            } : t
           ),
         }));
+        
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error unlinking note from task:', error);
+      set({ error: 'Failed to unlink note from task' });
+      throw error;
     }
   },
 
   summarizeTasks: async (options = {}) => {
     set({ summarizing: true, summary: null });
     try {
-      const response = await apiClient.post(`/api/tasks/summarize`, options);
-      const summary = response.data.summary;
-      set({ summary, summarizing: false });
-      return summary;
+      const state = get();
+      const { tasks } = state;
+      
+      // Filter tasks based on options
+      let filteredTasks = [...tasks];
+      
+      if (options.category) {
+        filteredTasks = filteredTasks.filter(task => task.category === options.category);
+      }
+      
+      if (options.priority) {
+        filteredTasks = filteredTasks.filter(task => task.priority === options.priority);
+      }
+      
+      if (options.completed !== undefined) {
+        filteredTasks = filteredTasks.filter(task => task.completed === options.completed);
+      }
+      
+      if (options.timeframe) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        switch (options.timeframe) {
+          case 'today':
+            filteredTasks = filteredTasks.filter(task => {
+              const dueDate = new Date(task.dueDate);
+              return dueDate >= today && dueDate < new Date(today.getTime() + 24 * 60 * 60 * 1000);
+            });
+            break;
+          case 'week':
+            const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+            filteredTasks = filteredTasks.filter(task => {
+              const dueDate = new Date(task.dueDate);
+              return dueDate >= today && dueDate < weekEnd;
+            });
+            break;
+          case 'month':
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+            filteredTasks = filteredTasks.filter(task => {
+              const dueDate = new Date(task.dueDate);
+              return dueDate >= today && dueDate < monthEnd;
+            });
+            break;
+          // 'all' doesn't need filtering
+        }
+      }
+      
+      // Generate summary text
+      let summaryText = '';
+      
+      if (filteredTasks.length === 0) {
+        summaryText = 'No tasks match the selected criteria.';
+      } else {
+        // Group by category
+        const tasksByCategory: Record<string, Task[]> = {};
+        
+        filteredTasks.forEach(task => {
+          if (!tasksByCategory[task.category]) {
+            tasksByCategory[task.category] = [];
+          }
+          tasksByCategory[task.category].push(task);
+        });
+        
+        // Build summary text
+        summaryText = `Task Summary (${filteredTasks.length} tasks):\n\n`;
+        
+        Object.entries(tasksByCategory).forEach(([category, tasks]) => {
+          summaryText += `${category.charAt(0).toUpperCase() + category.slice(1)} (${tasks.length}):\n`;
+          
+          // Sort by priority and due date
+          tasks.sort((a, b) => {
+            const priorityOrder = { high: 0, medium: 1, low: 2 };
+            if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+              return priorityOrder[a.priority] - priorityOrder[b.priority];
+            }
+            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+          });
+          
+          tasks.forEach(task => {
+            const dueDate = new Date(task.dueDate).toLocaleDateString();
+            const status = task.completed ? '✓' : '○';
+            const priority = task.priority === 'high' ? '⚠️' : task.priority === 'medium' ? '⚠' : '•';
+            
+            summaryText += `  ${status} ${priority} ${task.title} (Due: ${dueDate})\n`;
+          });
+          
+          summaryText += '\n';
+        });
+      }
+      
+      set({ summary: summaryText, summarizing: false });
+      return summaryText;
     } catch (error) {
       console.error('Error summarizing tasks:', error);
-      set({ summarizing: false });
-      return 'Failed to generate summary.';
+      set({ error: 'Failed to generate task summary', summarizing: false });
+      return 'Error generating summary.';
     }
   },
 
   clearSummary: () => {
     set({ summary: null });
-  },
+  }
 })); 

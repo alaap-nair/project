@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { API_URL, apiClient } from '../config';
-import { handleApiError } from '../utils/apiUtils';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { firestore } from '../firebase.config';
 
 export interface Subject {
   _id: string;
@@ -26,12 +26,18 @@ export const useSubjectsStore = create<SubjectsStore>((set) => ({
   fetchSubjects: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get(`/api/subjects`);
-      set({ subjects: response.data, loading: false });
+      const q = query(collection(firestore, 'subjects'), orderBy('name'));
+      const querySnapshot = await getDocs(q);
+      
+      const subjectsData = querySnapshot.docs.map(doc => ({
+        _id: doc.id,
+        ...doc.data(),
+      } as Subject));
+      
+      set({ subjects: subjectsData, loading: false });
     } catch (error) {
       console.error('Error fetching subjects:', error);
-      const errorMessage = handleApiError(error, 'Failed to fetch subjects');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to fetch subjects', loading: false });
       // Return empty array to prevent app crashes
       set({ subjects: [] });
     }
@@ -40,15 +46,26 @@ export const useSubjectsStore = create<SubjectsStore>((set) => ({
   addSubject: async (subject) => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.post(`/api/subjects`, subject);
+      const docRef = await addDoc(collection(firestore, 'subjects'), {
+        ...subject,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      
+      const newSubject = {
+        _id: docRef.id,
+        ...subject
+      };
+      
       set((state) => ({
-        subjects: [...state.subjects, response.data],
+        subjects: [...state.subjects, newSubject],
         loading: false
       }));
+      
+      return newSubject;
     } catch (error) {
       console.error('Error adding subject:', error);
-      const errorMessage = handleApiError(error, 'Failed to add subject');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to add subject', loading: false });
       throw error;
     }
   },
@@ -56,17 +73,23 @@ export const useSubjectsStore = create<SubjectsStore>((set) => ({
   updateSubject: async (id, updatedSubject) => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.put(`/api/subjects/${id}`, updatedSubject);
+      const subjectRef = doc(firestore, 'subjects', id);
+      await updateDoc(subjectRef, {
+        ...updatedSubject,
+        updatedAt: serverTimestamp()
+      });
+      
       set((state) => ({
         subjects: state.subjects.map((subject) =>
-          subject._id === id ? { ...subject, ...response.data } : subject
+          subject._id === id ? { ...subject, ...updatedSubject } : subject
         ),
         loading: false
       }));
+      
+      return { _id: id, ...updatedSubject };
     } catch (error) {
       console.error('Error updating subject:', error);
-      const errorMessage = handleApiError(error, 'Failed to update subject');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to update subject', loading: false });
       throw error;
     }
   },
@@ -74,15 +97,17 @@ export const useSubjectsStore = create<SubjectsStore>((set) => ({
   deleteSubject: async (id) => {
     set({ loading: true, error: null });
     try {
-      await apiClient.delete(`/api/subjects/${id}`);
+      await deleteDoc(doc(firestore, 'subjects', id));
+      
       set((state) => ({
         subjects: state.subjects.filter((subject) => subject._id !== id),
         loading: false
       }));
+      
+      return true;
     } catch (error) {
       console.error('Error deleting subject:', error);
-      const errorMessage = handleApiError(error, 'Failed to delete subject');
-      set({ error: errorMessage, loading: false });
+      set({ error: 'Failed to delete subject', loading: false });
       throw error;
     }
   },

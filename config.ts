@@ -23,8 +23,8 @@ const getApiUrl = () => {
     }
     
     // For physical devices, use the local network IP of your computer
-    // This is your actual local IP address
-    return 'http://10.40.15.252:3000';
+    // Update this to your actual local IP address
+    return 'http://10.58.129.136:3000';
   }
   
   // For production
@@ -48,8 +48,8 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: false,
-  // Add timeout to prevent hanging requests
-  timeout: 10000,
+  // Increase timeout to prevent timeout issues
+  timeout: 30000,
 });
 
 // Add request interceptor for debugging

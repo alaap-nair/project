@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 're
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
+import { configureAudioSession } from '../utils/audioUtils';
 
 interface AudioRecorderProps {
   onRecordingComplete: (uri: string, duration: number) => void;
@@ -61,10 +62,10 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       setDuration(0);
       console.log('Requesting permissions..');
       await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
+      
+      // Use the configureAudioSession utility
+      await configureAudioSession();
+      
       console.log('Starting recording..');
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
@@ -74,7 +75,7 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       setRecordingStatus('recording');
       console.log('Recording started');
     } catch (err) {
-      console.error('Failed to start recording', err);
+      console.error('Failed to start recording:', err);
       setError('Failed to start recording. Please check permissions and try again.');
     }
   };
@@ -89,11 +90,28 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       const uri = recording.getURI();
       if (uri) {
         console.log('Recording stopped, URI:', uri);
+        
+        try {
+          // Get file info to verify the file exists and is accessible
+          if (FileSystem.getInfoAsync) {
+            const fileInfo = await FileSystem.getInfoAsync(uri);
+            console.log('File info:', fileInfo);
+            
+            if (!fileInfo.exists) {
+              throw new Error('Recording file does not exist');
+            }
+          }
+        } catch (fileErr) {
+          console.error('Error checking file info:', fileErr);
+        }
+        
         onRecordingComplete(uri, duration);
+      } else {
+        setError('No recording URI was generated. Please try again.');
       }
       setRecording(null);
     } catch (err) {
-      console.error('Failed to stop recording', err);
+      console.error('Failed to stop recording:', err);
       setError('Failed to stop recording. Please try again.');
     }
   }

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
 import { AudioRecorder } from './AudioRecorder';
 import { AudioPlayer } from './AudioPlayer';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useNotesStore } from '../store/notes';
 import { apiClient } from '../config';
+import { uploadAudioToStorage, configureAudioPlaybackSession } from '../utils/audioUtils';
 
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
@@ -22,6 +23,7 @@ export function TranscriptionManager({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(existingAudioUri || null);
+  const [isUploading, setIsUploading] = useState(false);
   const [audioDuration, setAudioDuration] = useState<number>(0);
   const [showRecorder, setShowRecorder] = useState(!existingAudioUri);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -37,28 +39,63 @@ export function TranscriptionManager({
   }, [sound]);
 
   const handleRecordingComplete = async (uri: string, duration: number) => {
-    setAudioUri(uri);
-    setAudioDuration(duration);
-    setShowRecorder(false);
-    
-    // Save audio to note if noteId is provided
-    if (noteId) {
-      try {
-        await addAudioToNote(noteId, uri);
-        console.log('Audio saved to note:', noteId);
-      } catch (err) {
-        console.error('Error saving audio to note:', err);
-        setError('Failed to save audio to note');
+    try {
+      console.log('Raw recording URI:', uri);
+      
+      // Fix potential URI format issues for local playback
+      let fixedUri = uri;
+      
+      // For iOS, file:// URIs need to be properly formatted
+      if (Platform.OS === 'ios' && !uri.startsWith('file://')) {
+        fixedUri = uri.replace('file:', 'file://');
       }
-    }
-    
-    // Automatically start transcription if needed
-    if (uri) {
-      handleTranscribe(uri);
+      
+      console.log('Using audio URI for local playback:', fixedUri);
+      
+      setAudioUri(fixedUri);
+      setAudioDuration(duration);
+      setShowRecorder(false);
+      
+      // Upload to Firebase Storage to get a permanent URL
+      if (noteId) {
+        try {
+          setIsUploading(true);
+          setError(null);
+          
+          const cloudStorageUrl = await uploadAudioToStorage(fixedUri);
+          console.log('Uploaded to Firebase Storage:', cloudStorageUrl);
+          
+          // Save permanent URL to note
+          await addAudioToNote(noteId, cloudStorageUrl);
+          console.log('Permanent audio URL saved to note:', noteId);
+          
+          // Update local URI to use the permanent URL
+          setAudioUri(cloudStorageUrl);
+          
+          // Automatically start transcription with the cloud URL
+          handleTranscribe(cloudStorageUrl);
+        } catch (err) {
+          console.error('Error uploading and saving audio:', err);
+          setError('Failed to save audio recording. The recording is available temporarily but may not persist when you close the app.');
+          
+          // Still try to transcribe using the local URI
+          handleTranscribe(fixedUri);
+        } finally {
+          setIsUploading(false);
+        }
+      } else {
+        // If no noteId, just use the local URI for transcription
+        handleTranscribe(fixedUri);
+      }
+    } catch (err) {
+      console.error('Error handling recording completion:', err);
+      setError('An error occurred while processing the recording.');
     }
   };
 
   const handleTranscribe = async (uri: string) => {
+    if (isTranscribing) return;
+    
     setIsTranscribing(true);
     setError(null);
 
@@ -111,6 +148,9 @@ export function TranscriptionManager({
     if (!audioUri) return;
 
     try {
+      // Configure audio mode for playback
+      await configureAudioPlaybackSession();
+      
       if (sound) {
         if (isPlaying) {
           await sound.pauseAsync();
@@ -120,13 +160,19 @@ export function TranscriptionManager({
           setIsPlaying(true);
         }
       } else {
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: audioUri },
-          { shouldPlay: true },
-          onPlaybackStatusUpdate
-        );
-        setSound(newSound);
-        setIsPlaying(true);
+        console.log('Creating new sound from URI:', audioUri);
+        try {
+          const { sound: newSound } = await Audio.Sound.createAsync(
+            { uri: audioUri },
+            { shouldPlay: true },
+            onPlaybackStatusUpdate
+          );
+          setSound(newSound);
+          setIsPlaying(true);
+        } catch (soundErr) {
+          console.error('Failed to create sound object:', soundErr);
+          setError('Failed to initialize audio playback');
+        }
       }
     } catch (err) {
       console.error('Error playing audio:', err);
@@ -166,23 +212,31 @@ export function TranscriptionManager({
             <TouchableOpacity 
               style={styles.playButton}
               onPress={handlePlayPause}
+              disabled={isUploading}
             >
-              <Ionicons
-                name={isPlaying ? 'pause' : 'play'}
-                size={24}
-                color="#007AFF"
-              />
+              {isUploading ? (
+                <ActivityIndicator size="small" color="#007AFF" />
+              ) : (
+                <Ionicons
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={24}
+                  color="#007AFF"
+                />
+              )}
             </TouchableOpacity>
             <View style={styles.audioInfo}>
-              <Text style={styles.audioTitle}>Recording</Text>
+              <Text style={styles.audioTitle}>
+                {isUploading ? 'Saving Recording...' : 'Recording'}
+              </Text>
               <Text style={styles.audioDuration}>{formatDuration(audioDuration)}</Text>
             </View>
             <TouchableOpacity 
               style={styles.newRecordingButton}
               onPress={handleNewRecording}
+              disabled={isUploading}
             >
-              <Ionicons name="mic" size={20} color="#007AFF" />
-              <Text style={styles.newRecordingText}>New</Text>
+              <Ionicons name="mic" size={20} color={isUploading ? '#C7C7CC' : '#007AFF'} />
+              <Text style={[styles.newRecordingText, isUploading && styles.disabledText]}>New</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -247,6 +301,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#007AFF',
     marginLeft: 4,
+  },
+  disabledText: {
+    color: '#C7C7CC',
   },
   transcribingContainer: {
     flexDirection: 'row',

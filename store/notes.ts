@@ -181,26 +181,40 @@ const useNotesStore = create<NotesStore>((set) => ({
   addAudioToNote: async (noteId: string, audioUrl: string) => {
     set({ loading: true, error: null });
     try {
+      console.log('Saving audio URL to note:', noteId, audioUrl);
+      
+      // Ensure the audio URL is properly formatted
+      let processedAudioUrl = audioUrl;
+      
+      // For stored URIs, we want to ensure they can be accessed across sessions
+      // This may require different handling based on your storage solution
+      // For now, we'll just log the URI format for debugging
+      
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
-        audioUrl,
+        audioUrl: processedAudioUrl,
         updatedAt: serverTimestamp()
       });
+      
+      console.log('Audio URL saved successfully');
       
       set((state) => ({
         notes: state.notes.map((note) =>
           note._id === noteId ? { 
             ...note, 
-            audioUrl, 
+            audioUrl: processedAudioUrl, 
             updatedAt: new Date().toISOString() 
           } : note
         ),
         loading: false
       }));
       
-      return { _id: noteId, audioUrl };
+      return { _id: noteId, audioUrl: processedAudioUrl };
     } catch (error) {
       console.error('Error adding audio to note:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+      }
       set({ error: 'Failed to add audio to note', loading: false });
       throw error;
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
@@ -17,17 +17,26 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Validate the audio URI
+  useEffect(() => {
+    if (!audioUri) {
+      setError('Invalid audio URI');
+      setIsLoading(false);
+      return;
+    }
+    
+    loadSound();
+  }, [audioUri]);
+
   // Load sound when component mounts
   useEffect(() => {
-    loadSound();
-    
     // Clean up when component unmounts
     return () => {
       if (sound) {
         sound.unloadAsync();
       }
     };
-  }, [audioUri]);
+  }, [sound]);
 
   // Set up position update interval when playing
   useEffect(() => {
@@ -36,9 +45,13 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
     if (isPlaying) {
       interval = setInterval(async () => {
         if (sound) {
-          const status = await sound.getStatusAsync();
-          if (status.isLoaded) {
-            setPosition(status.positionMillis / 1000);
+          try {
+            const status = await sound.getStatusAsync();
+            if (status.isLoaded) {
+              setPosition(status.positionMillis / 1000);
+            }
+          } catch (err) {
+            console.error('Error getting playback status:', err);
           }
         }
       }, 500);
@@ -56,10 +69,26 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
       setIsLoading(true);
       setError(null);
       
+      console.log('Loading audio from URI:', audioUri);
+      
+      // Check if URI is valid
+      if (!audioUri || typeof audioUri !== 'string') {
+        throw new Error('Invalid audio URI');
+      }
+      
       // Unload any existing sound
       if (sound) {
         await sound.unloadAsync();
       }
+      
+      // Configure audio mode for playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
       
       // Create and load the new sound
       const { sound: newSound } = await Audio.Sound.createAsync(
@@ -78,10 +107,17 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
         }
       }
       
+      console.log('Audio loaded successfully');
       setIsLoading(false);
     } catch (err) {
       console.error('Error loading audio:', err);
-      setError('Failed to load audio');
+      // More detailed error logging
+      if (err instanceof Error) {
+        console.error('Error message:', err.message);
+        console.error('Error name:', err.name);
+        console.error('Error stack:', err.stack);
+      }
+      setError('Failed to load audio. Please try again.');
       setIsLoading(false);
     }
   };

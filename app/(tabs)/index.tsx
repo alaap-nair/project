@@ -6,11 +6,12 @@ import { useNotesStore } from "../../store/notes";
 import { NoteCard } from "../../components/NoteCard";
 import { useEffect, useState } from "react";
 import { TouchableOpacity } from "react-native";
-import { router } from 'expo-router';
+import { NotesScreen as CustomNotesScreen } from "../../components/NotesScreen";
 
 export default function NotesScreen() {
   const { notes, fetchNotes } = useNotesStore();
   const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const loadNotes = async () => {
@@ -21,7 +22,7 @@ export default function NotesScreen() {
   }, []);
 
   const handleAddNote = () => {
-    router.push('/create');
+    setShowModal(true);
   };
 
   if (loading) {
@@ -32,31 +33,8 @@ export default function NotesScreen() {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      {notes.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No notes yet</Text>
-          <TouchableOpacity style={styles.emptyButton} onPress={handleAddNote}>
-            <Text style={styles.emptyButtonText}>Create your first note</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlashList
-          data={notes}
-          renderItem={({ item }) => <NoteCard note={item} />}
-          estimatedItemSize={120}
-          contentContainerStyle={styles.list}
-        />
-      )}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={handleAddNote}
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-      </TouchableOpacity>
-    </View>
-  );
+  // We're using the CustomNotesScreen component that already includes the FAB
+  return <CustomNotesScreen />;
 }
 
 const styles = StyleSheet.create({

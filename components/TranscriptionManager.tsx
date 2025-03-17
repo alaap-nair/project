@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { AudioRecorder } from './AudioRecorder';
 import { AudioPlayer } from './AudioPlayer';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
 import { Audio } from 'expo-av';
 import { useNotesStore } from '../store/notes';
+import { apiClient } from '../config';
 
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
@@ -72,7 +72,7 @@ export function TranscriptionManager({
       });
 
       // Send to backend for transcription
-      const response = await axios.post('http://localhost:3000/api/transcribe', formData, {
+      const response = await apiClient.post('/api/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

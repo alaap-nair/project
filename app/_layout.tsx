@@ -46,10 +46,12 @@ export default function RootLayout() {
 
   if (isInitializing) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.text}>Initializing app...</Text>
-      </View>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={styles.container}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.text}>Initializing app...</Text>
+        </View>
+      </GestureHandlerRootView>
     );
   }
 

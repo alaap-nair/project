@@ -23,8 +23,8 @@ const getApiUrl = () => {
     }
     
     // For physical devices, use the local network IP of your computer
-    // Update this to your actual local IP address
-    return 'http://10.58.129.136:3000';
+    // This is your actual local IP address
+    return 'http://10.42.13.101:3000';
   }
   
   // For production

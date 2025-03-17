@@ -1,12 +1,13 @@
-import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform, Alert } from 'react-native';
 import { format, formatDistanceToNow } from 'date-fns';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { Task, TaskPriority, TaskCategory } from '../store/tasks';
+import { useTasksStore } from '../store/tasks';
 
 interface TaskCardProps {
   task: Task;
-  onToggleComplete: (id: string) => void;
+  onToggleComplete?: (id: string) => void;
 }
 
 const PRIORITY_COLORS = {
@@ -24,6 +25,7 @@ const CATEGORY_COLORS = {
 };
 
 export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
+  const { deleteTask, toggleTaskCompletion } = useTasksStore();
   const priorityColor = PRIORITY_COLORS[task.priority];
   const categoryColor = CATEGORY_COLORS[task.category] || CATEGORY_COLORS.other;
   
@@ -41,15 +43,44 @@ export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
   // Get the reminder text once to avoid multiple calculations
   const reminderText = getReminderText();
 
+  const handleToggleComplete = (e) => {
+    e.stopPropagation();
+    if (onToggleComplete) {
+      onToggleComplete(task._id);
+    } else {
+      toggleTaskCompletion(task._id);
+    }
+  };
+
+  const handleDeleteTask = (e) => {
+    e.stopPropagation();
+    Alert.alert(
+      "Delete Task",
+      `Are you sure you want to delete "${task.title}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await deleteTask(task._id);
+            } catch (err) {
+              console.error('Error deleting task:', err);
+              Alert.alert('Error', 'Failed to delete task. Please try again.');
+            }
+          } 
+        }
+      ]
+    );
+  };
+
   return (
     <Link href={`/task/${task._id}`} asChild>
       <Pressable style={styles.container}>
         <Pressable 
           style={[styles.checkbox, task.completed && styles.checkboxChecked]}
-          onPress={(e) => {
-            e.stopPropagation();
-            onToggleComplete(task._id);
-          }}
+          onPress={handleToggleComplete}
         >
           {task.completed && (
             <Ionicons name="checkmark" size={16} color="#FFFFFF" />
@@ -110,6 +141,13 @@ export function TaskCard({ task, onToggleComplete }: TaskCardProps) {
             )}
           </View>
         </View>
+        
+        <Pressable 
+          style={styles.deleteButton}
+          onPress={handleDeleteTask}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+        </Pressable>
       </Pressable>
     </Link>
   );
@@ -229,5 +267,9 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  deleteButton: {
+    padding: 8,
+    marginLeft: 8,
   },
 }); 

@@ -1,3 +1,7 @@
+// DEPRECATED: This file is being phased out. Please use config/firebase.ts instead.
+// The Firebase app should only be initialized once across the entire application.
+// This file will be removed in a future update.
+
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
@@ -16,8 +20,15 @@ const firebaseConfig = {
   appId: "1:70256622721:web:e08844cc4cc1f78cfc2180",
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Re-use existing Firebase app if available instead of initializing a new one
+let app;
+try {
+  app = initializeApp(firebaseConfig);
+} catch (error) {
+  // Firebase app already exists, retrieve the existing instance
+  console.log('Firebase app already exists, re-using existing instance');
+  app = initializeApp();
+}
 
 // Initialize Firebase services
 const auth = getAuth(app);

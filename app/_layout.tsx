@@ -3,7 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { app, firestore } from '../firebase.config';
+import { default as app, firestore } from '../config/firebase';
 import { checkFirebaseConnection, showConnectionAlert } from '../utils/apiUtils';
 import { initializeSampleData } from '../utils/sampleData';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

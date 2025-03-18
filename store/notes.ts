@@ -92,14 +92,23 @@ const useNotesStore = create<NotesStore>((set) => ({
         content: note.content || '', // Ensure content is never undefined
         subjectId: note.subjectId || null,
         taskIds: Array.isArray(note.taskIds) ? note.taskIds.filter(id => typeof id === 'string') : [],
-        audioUrl: note.audioUrl || null,
-        transcript: note.transcript || null,
+        audioUrl: typeof note.audioUrl === 'string' && note.audioUrl.trim() !== '' ? note.audioUrl : null,
+        transcript: typeof note.transcript === 'string' ? note.transcript : null,
       };
       
-      console.log('Adding note to Firestore:', JSON.stringify(sanitizedNote));
+      // Remove any undefined or null fields to prevent Firestore errors
+      const firestoreData = Object.entries(sanitizedNote).reduce((acc, [key, value]) => {
+        // Only include fields with non-undefined values
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
+      
+      console.log('Adding note to Firestore:', JSON.stringify(firestoreData));
       
       const docRef = await addDoc(collection(db, 'notes'), {
-        ...sanitizedNote,
+        ...firestoreData,
         userId: currentUser.uid, // Associate note with current user
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -295,6 +304,14 @@ const useNotesStore = create<NotesStore>((set) => ({
   addAudioToNote: async (noteId: string, audioUrl: string) => {
     set({ loading: true, error: null });
     try {
+      if (!noteId) {
+        throw new Error('Note ID is required');
+      }
+      
+      if (!audioUrl || typeof audioUrl !== 'string') {
+        throw new Error('Valid audio URL is required');
+      }
+      
       const currentUser = useAuthStore.getState().user;
       
       if (!currentUser) {
@@ -316,7 +333,12 @@ const useNotesStore = create<NotesStore>((set) => ({
       console.log('Saving audio URL to note:', noteId, audioUrl);
       
       // Process the audio URL if needed
-      let processedAudioUrl = audioUrl;
+      let processedAudioUrl = audioUrl.trim();
+      
+      // Validate the URL is not empty after trimming
+      if (!processedAudioUrl) {
+        throw new Error('Audio URL cannot be empty');
+      }
       
       const noteRef = doc(db, 'notes', noteId);
       await updateDoc(noteRef, {

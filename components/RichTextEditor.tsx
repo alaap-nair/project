@@ -321,22 +321,47 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
         // Sanitize content to ensure it's never null or undefined
         const sanitizedContent = content.trim() || ' ';
         
-        console.log('Creating note with:', {
+        // Create the note data object with all required fields
+        const noteData = {
           title: title.trim(),
+          content: sanitizedContent,
+          taskIds: taskIds,
+          // Only include audioUrl if we have a recording
+          ...(recording && recording.getURI ? { audioUrl: null } : {})
+        };
+        
+        console.log('Creating note with:', {
+          title: noteData.title,
           content: sanitizedContent.substring(0, 50) + '...',
           taskIds: JSON.stringify(taskIds),
+          hasAudioField: noteData.hasOwnProperty('audioUrl')
         });
         
         try {
-          const newNote = await addNote({
-            title: title.trim(),
-            content: sanitizedContent,
-            taskIds: taskIds,
-          });
+          const newNote = await addNote(noteData);
           
           if (newNote && newNote._id) {
             noteId = newNote._id;
             console.log('Note created successfully with ID:', noteId);
+            
+            // Upload the recording if exists
+            if (recording && recording.getURI && noteId) {
+              try {
+                const uri = recording.getURI();
+                if (uri) {
+                  console.log('Uploading recording from URI:', uri);
+                  // Use the dedicated function to add audio to the note after creation
+                  // This separates the concerns and allows for proper handling of the audio file
+                  const { addAudioToNote } = useNotesStore.getState();
+                  
+                  // Handle the audio upload in a separate step to avoid the initial undefined value
+                  await addAudioToNote(noteId, uri);
+                }
+              } catch (audioError) {
+                console.error('Error adding audio to note:', audioError);
+                // Continue with the note creation even if audio upload fails
+              }
+            }
             
             // If we have a task ID to link and the note was created successfully
             if (linkToTaskId && noteId) {

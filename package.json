@@ -23,9 +23,11 @@
     "expo-blur": "^14.0.3",
     "expo-calendar": "^14.0.6",
     "expo-constants": "^17.0.5",
+    "expo-document-picker": "~13.0.3",
     "expo-file-system": "^18.0.11",
     "expo-font": "^13.0.3",
     "expo-haptics": "^14.0.1",
+    "expo-image-picker": "^16.0.6",
     "expo-linear-gradient": "^14.0.2",
     "expo-linking": "^7.0.5",
     "expo-notifications": "^0.29.14",
@@ -49,8 +51,7 @@
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "^0.19.13",
     "react-native-webview": "13.12.5",
-    "zustand": "^4.4.7",
-    "expo-document-picker": "~13.0.3"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

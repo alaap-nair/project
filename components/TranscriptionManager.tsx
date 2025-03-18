@@ -5,6 +5,7 @@ import { AudioPlayer } from './AudioPlayer';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useNotesStore } from '../store/notes';
+import { useAuthStore } from '../store/auth';
 import { apiClient } from '../config';
 import { uploadAudioToStorage, configureAudioPlaybackSession } from '../utils/audioUtils';
 
@@ -20,6 +21,7 @@ export function TranscriptionManager({
   noteId
 }: TranscriptionManagerProps) {
   const { addAudioToNote, addTranscriptToNote } = useNotesStore();
+  const { user } = useAuthStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(existingAudioUri || null);
@@ -42,6 +44,12 @@ export function TranscriptionManager({
     try {
       console.log('Raw recording URI:', uri);
       
+      // Check if user is authenticated
+      if (!user) {
+        setError('You must be logged in to save recordings');
+        return;
+      }
+      
       // Fix potential URI format issues for local playback
       let fixedUri = uri;
       
@@ -62,7 +70,8 @@ export function TranscriptionManager({
           setIsUploading(true);
           setError(null);
           
-          const cloudStorageUrl = await uploadAudioToStorage(fixedUri);
+          // Upload to user-specific storage path
+          const cloudStorageUrl = await uploadAudioToStorage(fixedUri, `users/${user.uid}/audio`);
           console.log('Uploaded to Firebase Storage:', cloudStorageUrl);
           
           // Save permanent URL to note

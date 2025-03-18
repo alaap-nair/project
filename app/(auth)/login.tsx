@@ -22,7 +22,7 @@ export default function LoginScreen() {
   const { signIn, isLoading, error } = useAuthStore();
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
+    if (!email.trim() || !password) {
       Alert.alert('Error', 'Please enter both email and password');
       return;
     }
@@ -41,8 +41,12 @@ export default function LoginScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to continue your studies</Text>
@@ -59,6 +63,8 @@ export default function LoginScreen() {
                 value={email}
                 onChangeText={setEmail}
                 editable={!isLoading}
+                blurOnSubmit={true}
+                textContentType="emailAddress"
               />
             </View>
 
@@ -67,10 +73,14 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Enter your password"
-                secureTextEntry
+                secureTextEntry={true}
                 value={password}
                 onChangeText={setPassword}
                 editable={!isLoading}
+                blurOnSubmit={true}
+                textContentType="password"
+                autoCorrect={false}
+                autoCapitalize="none"
               />
             </View>
 

@@ -31,7 +31,7 @@ export const uriToBlob = async (uri: string): Promise<Blob> => {
 };
 
 // Upload audio file to Firebase Storage and return permanent URL
-export const uploadAudioToStorage = async (uri: string): Promise<string> => {
+export const uploadAudioToStorage = async (uri: string, storagePath: string = 'audio'): Promise<string> => {
   try {
     console.log('Starting audio upload from URI:', uri);
     
@@ -46,7 +46,7 @@ export const uploadAudioToStorage = async (uri: string): Promise<string> => {
     
     // Create a reference to the storage location
     const filename = getFilenameFromUri(uploadUri);
-    const storageRef = ref(storage, `audio/${filename}`);
+    const storageRef = ref(storage, `${storagePath}/${filename}`);
     
     let blob: Blob;
     

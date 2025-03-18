@@ -21,7 +21,7 @@ interface NotesStore {
   loading: boolean;
   error: string | null;
   fetchNotes: () => Promise<void>;
-  addNote: (note: Omit<Note, '_id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  addNote: (note: Omit<Note, '_id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<Note>;
   updateNote: (id: string, updatedNote: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   linkTaskToNote: (noteId: string, taskId: string) => Promise<void>;
@@ -86,22 +86,33 @@ const useNotesStore = create<NotesStore>((set) => ({
         throw new Error('You must be logged in to create notes');
       }
       
+      // Sanitize the input to ensure it's Firestore-safe
+      const sanitizedNote = {
+        title: note.title || '',
+        content: note.content || '', // Ensure content is never undefined
+        subjectId: note.subjectId || null,
+        taskIds: Array.isArray(note.taskIds) ? note.taskIds.filter(id => typeof id === 'string') : [],
+        audioUrl: note.audioUrl || null,
+        transcript: note.transcript || null,
+      };
+      
+      console.log('Adding note to Firestore:', JSON.stringify(sanitizedNote));
+      
       const docRef = await addDoc(collection(db, 'notes'), {
-        ...note,
+        ...sanitizedNote,
         userId: currentUser.uid, // Associate note with current user
-        taskIds: note.taskIds || [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
       
       const newNote = {
         _id: docRef.id,
-        ...note,
+        ...sanitizedNote,
         userId: currentUser.uid,
-        taskIds: note.taskIds || [],
+        taskIds: sanitizedNote.taskIds,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      };
+      } as Note;
       
       set((state) => ({
         notes: [newNote, ...state.notes],

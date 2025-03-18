@@ -310,31 +310,55 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
         // Update existing note
         await updateNote(initialNote._id, {
           title: title.trim(),
-          content: content.trim()
+          content: content.trim() || ' ', // Ensure content is never empty
         });
         noteId = initialNote._id;
         console.log('Note updated successfully');
       } else {
         // Create new note with taskIds if linking to a task
-        const taskIds = linkToTaskId ? [linkToTaskId] : [];
-        const newNote = await addNote({
-          title: title.trim(),
-          content: content.trim(),
-          taskIds: taskIds,
-        });
-        noteId = newNote._id;
-        console.log('Note created successfully');
+        const taskIds = linkToTaskId && typeof linkToTaskId === 'string' ? [linkToTaskId] : [];
         
-        // If we have a task ID to link and the note was created successfully
-        if (linkToTaskId && noteId) {
-          try {
-            const { linkTaskToNote } = useNotesStore.getState();
-            await linkTaskToNote(noteId, linkToTaskId);
-            console.log(`Note linked to task: ${linkToTaskId}`);
-          } catch (linkError) {
-            console.error('Error linking task to note:', linkError);
-            // We don't want to fail the whole operation if just the linking fails
+        // Sanitize content to ensure it's never null or undefined
+        const sanitizedContent = content.trim() || ' ';
+        
+        console.log('Creating note with:', {
+          title: title.trim(),
+          content: sanitizedContent.substring(0, 50) + '...',
+          taskIds: JSON.stringify(taskIds),
+        });
+        
+        try {
+          const newNote = await addNote({
+            title: title.trim(),
+            content: sanitizedContent,
+            taskIds: taskIds,
+          });
+          
+          if (newNote && newNote._id) {
+            noteId = newNote._id;
+            console.log('Note created successfully with ID:', noteId);
+            
+            // If we have a task ID to link and the note was created successfully
+            if (linkToTaskId && noteId) {
+              try {
+                const { linkTaskToNote } = useNotesStore.getState();
+                await linkTaskToNote(noteId, linkToTaskId);
+                console.log(`Note linked to task: ${linkToTaskId}`);
+              } catch (linkError) {
+                console.error('Error linking task to note:', linkError);
+                // We don't want to fail the whole operation if just the linking fails
+              }
+            }
+          } else {
+            console.error('Note creation returned invalid response:', newNote);
+            throw new Error('Failed to create note: Invalid response');
           }
+        } catch (createError) {
+          console.error('Error creating note:', createError);
+          if (createError instanceof Error) {
+            console.error('Error details:', createError.message);
+          }
+          throw createError;
         }
       }
       

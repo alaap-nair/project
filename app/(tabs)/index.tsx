@@ -1,5 +1,5 @@
 import { View, StyleSheet, ActivityIndicator } from "react-native";
-import { useNotesStore } from "../../store/notes";
+import useNotesStore from "../../store/notes";
 import { useEffect, useState } from "react";
 import { NotesScreen as CustomNotesScreen } from "../../components/NotesScreen";
 

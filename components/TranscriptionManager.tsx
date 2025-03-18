@@ -4,7 +4,7 @@ import { AudioRecorder } from './AudioRecorder';
 import { AudioPlayer } from './AudioPlayer';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import { useNotesStore } from '../store/notes';
+import useNotesStore from '../store/notes';
 import { useAuthStore } from '../store/auth';
 import { apiClient } from '../config';
 import { uploadAudioToStorage, configureAudioPlaybackSession } from '../utils/audioUtils';

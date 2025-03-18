@@ -1,6 +1,8 @@
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { useNotesStore } from '../../store/notes';
+import useNotesStore from '../../store/notes';
+import useTasksStore from '../../store/tasks';
 import { format, isValid } from 'date-fns';
+import React, { useEffect, useState } from 'react';
 
 export default function CalendarScreen() {
   const notes = useNotesStore((state) => state.notes);

@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, Pressable, Platform, Modal } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useNotesStore } from '../store/notes';
+import useNotesStore from '../store/notes';
 import { useTasksStore } from '../store/tasks';
 import { useAuthStore } from '../store/auth';
 import { useState } from 'react';

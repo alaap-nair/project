@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { Alert, Linking, Platform } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 
 // Helper function to handle index error links
 export const handleIndexError = (indexError) => {
@@ -48,12 +49,15 @@ export const handleIndexError = (indexError) => {
                     text: "Copy URL",
                     onPress: async () => {
                       try {
-                        // Use clipboard API if available
+                        // Handle clipboard operations for both web and mobile
                         if (Platform.OS !== 'web') {
-                          const Clipboard = require('expo-clipboard');
                           await Clipboard.setStringAsync(indexUrl);
-                          Alert.alert("URL Copied", "The index URL has been copied to your clipboard.");
+                        } else {
+                          // For web, use the browser clipboard API
+                          navigator.clipboard.writeText(indexUrl)
+                            .catch(e => console.warn("Web clipboard API failed:", e));
                         }
+                        Alert.alert("URL Copied", "The index URL has been copied to your clipboard.");
                       } catch (e) {
                         console.warn("Couldn't copy URL:", e);
                       }

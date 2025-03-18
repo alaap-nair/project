@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import useNotesStore from '../../store/notes';
-import useTasksStore from '../../store/tasks';
+import { useTasksStore } from '../../store/tasks';
 import { format, isValid } from 'date-fns';
 import React, { useEffect, useState } from 'react';
 

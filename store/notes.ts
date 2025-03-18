@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuthStore } from './auth';
+import { handleIndexError } from '../services/firebaseDb';
 
 export interface Note {
   _id: string;
@@ -74,7 +75,11 @@ const useNotesStore = create<NotesStore>((set) => ({
         // Check if this is the missing index error
         if (queryError.code === 'failed-precondition' || 
             (queryError.message && queryError.message.includes('index'))) {
-          console.error('Firebase index error:', queryError);
+          // Remove the error log and just show a warning
+          console.warn('Firebase index required for notes query. Falling back to client-side sorting.');
+          
+          // Show UI prompt to create the index
+          handleIndexError(queryError);
           
           // Fall back to a simpler query without ordering
           try {

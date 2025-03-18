@@ -3,6 +3,7 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
 import { firestore } from '../firebase.config';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
+import { handleIndexError } from '../services/firebaseDb';
 
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'project' | 'other';
@@ -109,7 +110,11 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         // Check if this is the missing index error
         if (queryError.code === 'failed-precondition' || 
             (queryError.message && queryError.message.includes('index'))) {
-          console.error('Firebase index error:', queryError);
+          // Remove the error log and just show a warning
+          console.warn('Firebase index required for tasks query. Falling back to client-side sorting.');
+          
+          // Show UI prompt to create the index
+          handleIndexError(queryError);
           
           // Fall back to a simpler query without ordering
           try {

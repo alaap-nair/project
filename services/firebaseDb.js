@@ -12,6 +12,67 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
+import { Alert, Linking, Platform } from 'react-native';
+
+// Helper function to handle index error links
+export const handleIndexError = (indexError) => {
+  if (!indexError || !indexError.message) return;
+  
+  // Extract the Firebase console URL from the error message
+  const urlMatch = indexError.message.match(/(https:\/\/console\.firebase\.google\.com\/.*?)(\s|$)/);
+  
+  if (urlMatch && urlMatch[1]) {
+    const indexUrl = urlMatch[1];
+    
+    // Show alert with option to open Firebase console
+    Alert.alert(
+      "Firestore Index Required",
+      "This query requires a database index for optimal performance. Would you like to create it now?",
+      [
+        {
+          text: "Not Now",
+          style: "cancel"
+        },
+        {
+          text: "Create Index",
+          onPress: () => {
+            Linking.openURL(indexUrl).catch(err => {
+              console.warn("Couldn't open the URL:", err);
+              
+              // If opening URL fails, show the URL to manually copy
+              Alert.alert(
+                "Couldn't Open URL",
+                "Please copy and open this URL in your browser to create the index:\n\n" + indexUrl,
+                [
+                  {
+                    text: "Copy URL",
+                    onPress: async () => {
+                      try {
+                        // Use clipboard API if available
+                        if (Platform.OS !== 'web') {
+                          const Clipboard = require('expo-clipboard');
+                          await Clipboard.setStringAsync(indexUrl);
+                          Alert.alert("URL Copied", "The index URL has been copied to your clipboard.");
+                        }
+                      } catch (e) {
+                        console.warn("Couldn't copy URL:", e);
+                      }
+                    }
+                  },
+                  { text: "OK" }
+                ]
+              );
+            });
+          }
+        }
+      ]
+    );
+    
+    return true;
+  }
+  
+  return false;
+};
 
 // Add a document to a collection
 export const addDocument = async (collectionName, data) => {
@@ -98,6 +159,9 @@ export const getFilteredDocuments = async (
       if (queryError.code === 'failed-precondition' || 
           (queryError.message && queryError.message.includes('index'))) {
         console.warn(`Firestore index required for ${collectionName} query. Falling back to client-side sorting.`);
+        
+        // Show UI prompt to create the index
+        handleIndexError(queryError);
         
         // Fallback to a simpler query without ordering
         const fallbackQuery = query(

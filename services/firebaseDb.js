@@ -77,20 +77,74 @@ export const getFilteredDocuments = async (
   orderDirection = 'desc'
 ) => {
   try {
-    const q = query(
-      collection(firestore, collectionName),
-      where(filterField, filterOperator, filterValue),
-      orderBy(orderByField, orderDirection)
-    );
-    
-    const querySnapshot = await getDocs(q);
-    const documents = [];
-    
-    querySnapshot.forEach((doc) => {
-      documents.push({ id: doc.id, ...doc.data() });
-    });
-    
-    return documents;
+    try {
+      // Try the composite query first
+      const q = query(
+        collection(firestore, collectionName),
+        where(filterField, filterOperator, filterValue),
+        orderBy(orderByField, orderDirection)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const documents = [];
+      
+      querySnapshot.forEach((doc) => {
+        documents.push({ id: doc.id, ...doc.data() });
+      });
+      
+      return documents;
+    } catch (queryError) {
+      // Check if this is a missing index error
+      if (queryError.code === 'failed-precondition' || 
+          (queryError.message && queryError.message.includes('index'))) {
+        console.warn(`Firestore index required for ${collectionName} query. Falling back to client-side sorting.`);
+        
+        // Fallback to a simpler query without ordering
+        const fallbackQuery = query(
+          collection(firestore, collectionName),
+          where(filterField, filterOperator, filterValue)
+        );
+        
+        const fallbackSnapshot = await getDocs(fallbackQuery);
+        let fallbackDocuments = [];
+        
+        fallbackSnapshot.forEach((doc) => {
+          fallbackDocuments.push({ id: doc.id, ...doc.data() });
+        });
+        
+        // Sort documents in memory based on the requested order
+        if (orderByField) {
+          fallbackDocuments.sort((a, b) => {
+            const aValue = a[orderByField];
+            const bValue = b[orderByField];
+            
+            // Handle dates (convert to timestamp for comparison)
+            if (aValue && bValue) {
+              const aTime = aValue instanceof Date ? aValue.getTime() : 
+                           (aValue.toDate ? aValue.toDate().getTime() : aValue);
+              const bTime = bValue instanceof Date ? bValue.getTime() : 
+                           (bValue.toDate ? bValue.toDate().getTime() : bValue);
+              
+              return orderDirection === 'desc' ? bTime - aTime : aTime - bTime;
+            }
+            
+            return 0;
+          });
+        }
+        
+        console.warn(
+          `To improve performance, please create a composite index on the "${collectionName}" collection with fields:\n` +
+          `- ${filterField} (${filterOperator})\n` +
+          `- ${orderByField} (${orderDirection})\n` +
+          'You can create this index in the Firebase console.'
+        );
+        
+        return fallbackDocuments;
+      } else {
+        // Not an index error, so rethrow
+        throw queryError;
+      }
+    }
   } catch (error) {
     console.error(`Error getting filtered documents from ${collectionName}:`, error);
     throw error;

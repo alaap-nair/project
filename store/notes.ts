@@ -48,27 +48,85 @@ const useNotesStore = create<NotesStore>((set) => ({
         return;
       }
       
-      // Query notes that belong to the current user
-      const q = query(
-        collection(db, 'notes'), 
-        where('userId', '==', currentUser.uid),
-        orderBy('createdAt', 'desc')
-      );
-      
-      const querySnapshot = await getDocs(q);
-      
-      const notesData = querySnapshot.docs.map(doc => ({
-        _id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.() ? 
-          doc.data().createdAt.toDate().toISOString() : 
-          new Date().toISOString(),
-        updatedAt: doc.data().updatedAt?.toDate?.() ? 
-          doc.data().updatedAt.toDate().toISOString() : 
-          new Date().toISOString(),
-      } as Note));
-      
-      set({ notes: notesData, loading: false });
+      try {
+        // Query notes that belong to the current user with ordering
+        const q = query(
+          collection(db, 'notes'), 
+          where('userId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const querySnapshot = await getDocs(q);
+        
+        const notesData = querySnapshot.docs.map(doc => ({
+          _id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.() ? 
+            doc.data().createdAt.toDate().toISOString() : 
+            new Date().toISOString(),
+          updatedAt: doc.data().updatedAt?.toDate?.() ? 
+            doc.data().updatedAt.toDate().toISOString() : 
+            new Date().toISOString(),
+        } as Note));
+        
+        set({ notes: notesData, loading: false });
+      } catch (queryError: any) {
+        // Check if this is the missing index error
+        if (queryError.code === 'failed-precondition' || 
+            (queryError.message && queryError.message.includes('index'))) {
+          console.error('Firebase index error:', queryError);
+          
+          // Fall back to a simpler query without ordering
+          try {
+            console.log('Falling back to simple query without ordering');
+            const fallbackQuery = query(
+              collection(db, 'notes'),
+              where('userId', '==', currentUser.uid)
+            );
+            
+            const fallbackSnapshot = await getDocs(fallbackQuery);
+            
+            // Process the data and sort in memory instead
+            const fallbackData = fallbackSnapshot.docs.map(doc => ({
+              _id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate?.() ? 
+                doc.data().createdAt.toDate().toISOString() : 
+                new Date().toISOString(),
+              updatedAt: doc.data().updatedAt?.toDate?.() ? 
+                doc.data().updatedAt.toDate().toISOString() : 
+                new Date().toISOString(),
+            } as Note));
+            
+            // Sort notes by createdAt in memory
+            fallbackData.sort((a, b) => 
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            
+            set({ 
+              notes: fallbackData, 
+              loading: false,
+              error: 'Please create the required Firestore index for optimal performance. Check console for details.'
+            });
+            
+            // Provide a helpful message about creating the index
+            console.warn(
+              'To improve performance, please create a composite index on the "notes" collection with fields:\n' +
+              '- userId (ascending)\n' +
+              '- createdAt (descending)\n' +
+              'You can create this index in the Firebase console.'
+            );
+            
+            return;
+          } catch (fallbackError) {
+            console.error('Error with fallback query:', fallbackError);
+            throw fallbackError;
+          }
+        } else {
+          // This is not an index error, so rethrow
+          throw queryError;
+        }
+      }
     } catch (error) {
       console.error('Error fetching notes:', error);
       set({ error: 'Failed to fetch notes', loading: false });

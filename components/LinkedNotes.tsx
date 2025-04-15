@@ -35,9 +35,8 @@ export function LinkedNotes({ taskId, noteIds }: LinkedNotesProps) {
   const handleAddNote = () => {
     // Check if user is logged in
     if (!user) {
-      alert("You must be logged in to add notes");
-      router.push("/(auth)/login");
-      return;
+      router.push("/auth/login");
+      return null;
     }
     
     setShowNoteModal(true);

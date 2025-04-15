@@ -11,23 +11,49 @@ export function NotesScreen() {
   const { notes, fetchNotes, loading, error } = useNotesStore();
   const { user } = useAuthStore();
   const [modalVisible, setModalVisible] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
 
+  // Handle authentication check
   useEffect(() => {
-    // Only fetch notes if the user is authenticated
-    if (user) {
-      fetchNotes();
-    } else {
-      // Redirect to login if not authenticated
-      router.replace('/(auth)/login');
-    }
+    const checkAuth = async () => {
+      if (!user) {
+        router.replace('/auth/login');
+      }
+      setIsAuthChecked(true);
+    };
+    checkAuth();
   }, [user]);
 
-  // Refresh notes when the component mounts and when the modal closes (potentially after a new note is created)
+  // Fetch notes only after auth check and when user is present
   useEffect(() => {
-    if (user && !modalVisible) {
-      fetchNotes();
-    }
-  }, [modalVisible]);
+    let isMounted = true;
+
+    const loadNotes = async () => {
+      if (isAuthChecked && user && isMounted) {
+        await fetchNotes();
+      }
+    };
+
+    loadNotes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthChecked, user, modalVisible]);
+
+  // Don't render anything until auth check is complete
+  if (!isAuthChecked) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  // If no user is found after auth check, don't render the screen
+  if (!user) {
+    return null;
+  }
 
   const openNoteEditor = () => {
     if (!user) {
@@ -86,11 +112,6 @@ export function NotesScreen() {
         />
       )}
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={openNoteEditor}>
-        <Ionicons name="add" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
-
       {/* Note Creation Modal */}
       <Modal
         animationType="slide"
@@ -107,8 +128,8 @@ export function NotesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: "#F8F8F8",
+    backgroundColor: '#fff',
+    paddingTop: 60,
   },
   centeredContainer: {
     flex: 1,
@@ -120,12 +141,14 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 16,
+    paddingLeft: 16,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    paddingHorizontal: 20,
+    marginTop: -40,
   },
   emptyMessage: {
     fontSize: 16,
@@ -136,8 +159,10 @@ const styles = StyleSheet.create({
   createButton: {
     backgroundColor: '#007AFF',
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     borderRadius: 8,
+    alignSelf: 'center',
+    minWidth: 200,
   },
   createButtonText: {
     color: '#FFFFFF',
@@ -158,22 +183,6 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-  },
-  fab: {
-    position: 'absolute',
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    right: 20,
-    bottom: 20,
-    backgroundColor: '#007AFF',
-    borderRadius: 28,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.5,
-  },
+  }
 });
 

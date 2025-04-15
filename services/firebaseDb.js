@@ -9,7 +9,8 @@ import {
   query, 
   where, 
   orderBy, 
-  serverTimestamp 
+  serverTimestamp,
+  getDocs as _getDocs // Rename to avoid conflict with our enhanced version
 } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { Alert, Linking, Platform } from 'react-native';
@@ -17,6 +18,96 @@ import * as Clipboard from 'expo-clipboard';
 
 // Check if we're in a browser environment
 const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+
+// Enhanced getDocs function that automatically creates sample documents to help trigger index creation
+export const enhancedGetDocs = async (query) => {
+  try {
+    return await _getDocs(query);
+  } catch (error) {
+    if (error.message && error.message.includes('index')) {
+      console.log('Firestore index error detected, attempting to create index...');
+      await createFirestoreIndex(query);
+      return await _getDocs(query);
+    }
+    throw error;
+  }
+};
+
+// Track which collections we've already tried to create indexes for to avoid infinite loops
+const indexCreationAttempts = new Set();
+
+// Helper function to automatically create or force Firestore index creation
+export const createFirestoreIndex = async (queryOrCollection, filterField, orderByField) => {
+  let collectionName, filterFieldName, orderByFieldName;
+  
+  if (typeof queryOrCollection === 'object' && queryOrCollection._query) {
+    // Extract information from the query object
+    const queryObj = queryOrCollection._query;
+    collectionName = queryObj.path.segments[queryObj.path.segments.length - 1];
+    
+    // Extract filter and order fields from the query constraints
+    const constraints = queryObj.filters || [];
+    const orderBy = queryObj.orderBy || [];
+    
+    filterFieldName = constraints[0]?.field?.segments?.[0] || filterField;
+    orderByFieldName = orderBy[0]?.field?.segments?.[0] || orderByField;
+  } else {
+    collectionName = queryOrCollection;
+    filterFieldName = filterField;
+    orderByFieldName = orderByField;
+  }
+
+  // Create a unique key to track this specific index creation attempt
+  const indexKey = `${collectionName}_${filterFieldName}_${orderByFieldName}`;
+  
+  // Check if we've already tried to create this index
+  if (indexCreationAttempts.has(indexKey)) {
+    console.log('Already attempted to create this index, skipping to avoid loops');
+    return false;
+  }
+  
+  // Mark that we've attempted this index
+  indexCreationAttempts.add(indexKey);
+  
+  console.log(`Attempting to help Firebase create index for ${collectionName} with filter ${filterFieldName} and order ${orderByFieldName}`);
+  
+  try {
+    // 1. Create a temporary document that will have the right fields for the index
+    const tempDoc = {
+      [filterFieldName]: 'temp-filter-value',
+      [orderByFieldName]: new Date(),
+      _isTemporary: true,
+      createdAt: serverTimestamp()
+    };
+    
+    // 2. Add the temporary document to the collection
+    const docRef = await addDoc(collection(firestore, collectionName), tempDoc);
+    console.log('Added temporary document to help with index creation');
+    
+    // 3. Try the query that needs the index (this might still fail, but helps Firebase know we need the index)
+    try {
+      const q = query(
+        collection(firestore, collectionName),
+        where(filterFieldName, '==', 'temp-filter-value'),
+        orderBy(orderByFieldName, 'desc')
+      );
+      
+      await _getDocs(q);
+      console.log('Successfully queried with the index, it might be ready now');
+    } catch (queryError) {
+      console.log('Expected query error occurred, this helps Firebase know we need the index', queryError.code);
+    }
+    
+    // 4. Clean up the temporary document
+    await deleteDoc(docRef);
+    console.log('Cleaned up temporary document');
+    
+    return true;
+  } catch (error) {
+    console.error('Error in index creation helper:', error);
+    return false;
+  }
+};
 
 // Helper function to handle index error links for web
 export const handleIndexErrorWeb = (indexError) => {
@@ -120,6 +211,28 @@ export const handleIndexError = (indexError) => {
     // Log the URL for platforms without UI
     console.log('Firebase index URL:', indexUrl);
     console.log('Please create the index in Firebase console for optimal performance.');
+    
+    // Extract collection and field info if possible
+    const collectionMatch = indexError.message.match(/collection group: \[([^\]]+)\]/i);
+    const fieldMatch = indexError.message.match(/field: \[([^\]]+)\]/i);
+    
+    if (collectionMatch && collectionMatch[1] && fieldMatch && fieldMatch[1]) {
+      const collectionName = collectionMatch[1];
+      const fields = fieldMatch[1].split(', ');
+      
+      console.log(`Attempting automatic index solution for collection ${collectionName} with fields ${fields.join(', ')}`);
+      
+      if (fields.length >= 2) {
+        // Try to auto-create the index
+        createFirestoreIndex(collectionName, fields[0], fields[1])
+          .then(success => {
+            if (success) {
+              console.log('Index creation helper completed');
+            }
+          })
+          .catch(e => console.warn('Error in automatic index creation:', e));
+      }
+    }
     
     // Only use Alert if it's available (e.g., on React Native)
     if (typeof Alert !== 'undefined') {

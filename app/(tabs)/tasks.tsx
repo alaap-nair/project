@@ -140,12 +140,6 @@ export default function TasksScreen() {
         estimatedItemSize={120}
         contentContainerStyle={styles.list}
       />
-
-      <Link href="/new-task" asChild>
-        <Pressable style={styles.fab}>
-          <Ionicons name="add" size={24} color="#fff" />
-        </Pressable>
-      </Link>
     </View>
   );
 }
@@ -153,7 +147,8 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#fff',
+    paddingTop: 60,
   },
   loadingContainer: {
     flex: 1,
@@ -220,31 +215,5 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 5,
-      },
-      web: {
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
-        cursor: 'pointer',
-      },
-    }),
   },
 }); 

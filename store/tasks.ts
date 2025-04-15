@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
-import { handleIndexError } from '../services/firebaseDb';
+import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
 
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'project' | 'other';
@@ -74,7 +74,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
     try {
       try {
         const q = query(collection(firestore, 'tasks'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await enhancedGetDocs(q);
         
         const tasksData = querySnapshot.docs.map(doc => ({
           _id: doc.id,
@@ -120,7 +120,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
           try {
             console.log('Falling back to simple query without ordering');
             const fallbackQuery = query(collection(firestore, 'tasks'));
-            const fallbackSnapshot = await getDocs(fallbackQuery);
+            const fallbackSnapshot = await enhancedGetDocs(fallbackQuery);
             
             // Process the data and sort in memory instead
             const fallbackData = fallbackSnapshot.docs.map(doc => ({

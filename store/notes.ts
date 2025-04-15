@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { firestore } from '../firebase.config';
+import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
 import { useAuthStore } from './auth';
-import { handleIndexError } from '../services/firebaseDb';
 
 export interface Note {
   _id: string;
@@ -21,6 +21,8 @@ interface NotesStore {
   notes: Note[];
   loading: boolean;
   error: string | null;
+  showCreateModal: boolean;
+  modalVisible: boolean;
   fetchNotes: () => Promise<void>;
   addNote: (note: Omit<Note, '_id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<Note>;
   updateNote: (id: string, updatedNote: Partial<Note>) => Promise<void>;
@@ -29,6 +31,9 @@ interface NotesStore {
   unlinkTaskFromNote: (noteId: string, taskId: string) => Promise<void>;
   addAudioToNote: (noteId: string, audioUrl: string) => Promise<void>;
   addTranscriptToNote: (noteId: string, transcript: string) => Promise<void>;
+  setShowCreateModal: (show: boolean) => void;
+  openNoteEditor: () => void;
+  closeNoteEditor: () => void;
 }
 
 // Create the store
@@ -36,28 +41,36 @@ const useNotesStore = create<NotesStore>((set) => ({
   notes: [],
   loading: false,
   error: null,
+  showCreateModal: false,
+  modalVisible: false,
+  setShowCreateModal: (show) => set({ showCreateModal: show }),
+  openNoteEditor: () => set({ modalVisible: true }),
+  closeNoteEditor: () => set({ modalVisible: false }),
 
   fetchNotes: async () => {
     set({ loading: true, error: null });
+    
+    const currentUser = useAuthStore.getState().user;
+    
+    if (!currentUser?.uid) {
+      set({ 
+        notes: [],
+        loading: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
     try {
-      const currentUser = useAuthStore.getState().user;
-      
-      if (!currentUser) {
-        console.error('No authenticated user found');
-        set({ error: 'You must be logged in to view notes', loading: false });
-        set({ notes: [] });
-        return;
-      }
+      // Query notes that belong to the current user with ordering
+      const q = query(
+        collection(firestore, 'notes'), 
+        where('userId', '==', currentUser.uid),
+        orderBy('createdAt', 'desc')
+      );
       
       try {
-        // Query notes that belong to the current user with ordering
-        const q = query(
-          collection(db, 'notes'), 
-          where('userId', '==', currentUser.uid),
-          orderBy('createdAt', 'desc')
-        );
-        
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await enhancedGetDocs(q);
         
         const notesData = querySnapshot.docs.map(doc => ({
           _id: doc.id,
@@ -70,73 +83,55 @@ const useNotesStore = create<NotesStore>((set) => ({
             new Date().toISOString(),
         } as Note));
         
-        set({ notes: notesData, loading: false });
+        set({ notes: notesData, loading: false, error: null });
       } catch (queryError: any) {
-        // Check if this is the missing index error
         if (queryError.code === 'failed-precondition' || 
             (queryError.message && queryError.message.includes('index'))) {
-          // Remove the error log and just show a warning
           console.warn('Firebase index required for notes query. Falling back to client-side sorting.');
           
           // Show UI prompt to create the index
           handleIndexError(queryError);
           
           // Fall back to a simpler query without ordering
-          try {
-            console.log('Falling back to simple query without ordering');
-            const fallbackQuery = query(
-              collection(db, 'notes'),
-              where('userId', '==', currentUser.uid)
-            );
-            
-            const fallbackSnapshot = await getDocs(fallbackQuery);
-            
-            // Process the data and sort in memory instead
-            const fallbackData = fallbackSnapshot.docs.map(doc => ({
-              _id: doc.id,
-              ...doc.data(),
-              createdAt: doc.data().createdAt?.toDate?.() ? 
-                doc.data().createdAt.toDate().toISOString() : 
-                new Date().toISOString(),
-              updatedAt: doc.data().updatedAt?.toDate?.() ? 
-                doc.data().updatedAt.toDate().toISOString() : 
-                new Date().toISOString(),
-            } as Note));
-            
-            // Sort notes by createdAt in memory
-            fallbackData.sort((a, b) => 
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-            
-            set({ 
-              notes: fallbackData, 
-              loading: false,
-              error: 'Please create the required Firestore index for optimal performance. Check console for details.'
-            });
-            
-            // Provide a helpful message about creating the index
-            console.warn(
-              'To improve performance, please create a composite index on the "notes" collection with fields:\n' +
-              '- userId (ascending)\n' +
-              '- createdAt (descending)\n' +
-              'You can create this index in the Firebase console.'
-            );
-            
-            return;
-          } catch (fallbackError) {
-            console.error('Error with fallback query:', fallbackError);
-            throw fallbackError;
-          }
-        } else {
-          // This is not an index error, so rethrow
-          throw queryError;
+          const fallbackQuery = query(
+            collection(firestore, 'notes'),
+            where('userId', '==', currentUser.uid)
+          );
+          
+          const fallbackSnapshot = await enhancedGetDocs(fallbackQuery);
+          
+          const fallbackData = fallbackSnapshot.docs.map(doc => ({
+            _id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() ? 
+              doc.data().createdAt.toDate().toISOString() : 
+              new Date().toISOString(),
+            updatedAt: doc.data().updatedAt?.toDate?.() ? 
+              doc.data().updatedAt.toDate().toISOString() : 
+              new Date().toISOString(),
+          } as Note));
+          
+          // Sort notes by createdAt in memory
+          fallbackData.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          
+          set({ 
+            notes: fallbackData, 
+            loading: false,
+            error: null
+          });
+          return;
         }
+        throw queryError;
       }
     } catch (error) {
       console.error('Error fetching notes:', error);
-      set({ error: 'Failed to fetch notes', loading: false });
-      // Return empty array to prevent app crashes
-      set({ notes: [] });
+      set({ 
+        notes: [], 
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch notes'
+      });
     }
   },
 
@@ -170,7 +165,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       console.log('Adding note to Firestore:', JSON.stringify(firestoreData));
       
-      const docRef = await addDoc(collection(db, 'notes'), {
+      const docRef = await addDoc(collection(firestore, 'notes'), {
         ...firestoreData,
         userId: currentUser.uid, // Associate note with current user
         createdAt: serverTimestamp(),
@@ -220,7 +215,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         throw new Error('You do not have permission to update this note');
       }
       
-      const noteRef = doc(db, 'notes', id);
+      const noteRef = doc(firestore, 'notes', id);
       await updateDoc(noteRef, {
         ...updatedNote,
         updatedAt: serverTimestamp()
@@ -266,7 +261,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         throw new Error('You do not have permission to delete this note');
       }
       
-      await deleteDoc(doc(db, 'notes', id));
+      await deleteDoc(doc(firestore, 'notes', id));
       
       set((state) => ({
         notes: state.notes.filter((note) => note._id !== id),
@@ -302,7 +297,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       if (!taskIds.includes(taskId)) {
         taskIds.push(taskId);
         
-        const noteRef = doc(db, 'notes', noteId);
+        const noteRef = doc(firestore, 'notes', noteId);
         await updateDoc(noteRef, { 
           taskIds,
           updatedAt: serverTimestamp()
@@ -344,7 +339,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       const taskIds = (note.taskIds || []).filter(id => id !== taskId);
       
-      const noteRef = doc(db, 'notes', noteId);
+      const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, { 
         taskIds,
         updatedAt: serverTimestamp()
@@ -403,7 +398,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         throw new Error('Audio URL cannot be empty');
       }
       
-      const noteRef = doc(db, 'notes', noteId);
+      const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
         audioUrl: processedAudioUrl,
         updatedAt: serverTimestamp()
@@ -454,7 +449,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         throw new Error('You do not have permission to modify this note');
       }
       
-      const noteRef = doc(db, 'notes', noteId);
+      const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
         transcript,
         updatedAt: serverTimestamp()

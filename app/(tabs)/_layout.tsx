@@ -2,23 +2,21 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import useNotesStore from '../../store/notes';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { setShowCreateModal } = useNotesStore();
+  // const insets = useSafeAreaInsets();
+  // const reducedInset = Math.max(insets.bottom - 8, 0);
 
   return (
     <Tabs
       screenOptions={{
         tabBarStyle: {
           height: 60,
-          paddingVertical: 0,
+          paddingBottom: 0,
           backgroundColor: '#fff',
           borderTopWidth: 0,
-          position: 'absolute',
-          bottom: 20,
-          left: 20,
-          right: 20,
-          borderRadius: 25,
           shadowColor: '#000',
           shadowOffset: {
             width: 0,

@@ -4,7 +4,7 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import useNotesStore from '../../store/notes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function TabLayout() {
+const TabLayout = () => {
   const { setShowCreateModal } = useNotesStore();
   // const insets = useSafeAreaInsets();
   // const reducedInset = Math.max(insets.bottom - 8, 0);
@@ -71,8 +71,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="document-text" size={24} color={color} />
+          title: 'Notes',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" size={size} color={color} />
           ),
         }}
       />
@@ -80,14 +81,25 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person" size={24} color={color} />
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="test-firebase"
+        options={{
+          title: 'Test Firebase',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="flame-outline" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
   );
-}
+};
 
 const styles = StyleSheet.create({
   addButtonContainer: {
@@ -115,4 +127,6 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 });
+
+export default TabLayout;
 

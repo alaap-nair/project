@@ -7,10 +7,12 @@ import { default as app, firestore } from '../config/firebase';
 import { checkFirebaseConnection, showConnectionAlert } from '../utils/apiUtils';
 import { initializeSampleData } from '../utils/sampleData';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useAuthStore } from '../store/auth';
 
 export default function RootLayout() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+  const cleanup = useAuthStore(state => state.cleanup);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -42,7 +44,12 @@ export default function RootLayout() {
     };
 
     initializeApp();
-  }, []);
+
+    // Cleanup function
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
 
   if (isInitializing) {
     return (

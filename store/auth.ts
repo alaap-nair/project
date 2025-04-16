@@ -20,6 +20,7 @@ interface AuthStore {
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetStore: () => void;
+  cleanup: () => void;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -123,6 +124,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
   resetStore: () => {
     set({ user: null, isLoading: false, error: null, isAuthReady: true });
   },
+
+  cleanup: () => {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+  },
 }));
 
 // Set up auth state listener only once
@@ -132,12 +140,5 @@ if (!unsubscribe) {
   unsubscribe = onAuthStateChanged(auth, (user) => {
     console.log('Auth state changed:', user ? `User ${user.uid} signed in` : 'User signed out');
     useAuthStore.setState({ user, isAuthReady: true });
-  });
-}
-
-// Clean up listener when the app is unmounted
-if (typeof window !== 'undefined') {
-  window.addEventListener('beforeunload', () => {
-    unsubscribe?.();
   });
 } 

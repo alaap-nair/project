@@ -11,34 +11,17 @@ export function NotesScreen() {
   const { notes, fetchNotes, loading, error } = useNotesStore();
   const { user, isLoading: authLoading, isAuthReady } = useAuthStore();
   const [modalVisible, setModalVisible] = useState(false);
-  const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
   const [summary, setSummary] = useState('');
   const [summarizing, setSummarizing] = useState(false);
   const [summaryModalVisible, setSummaryModalVisible] = useState(false);
 
-  // Only check authentication after isAuthReady is true
-  useEffect(() => {
-    if (isAuthReady) {
-      if (!user) {
-        // Only redirect if not in a modal
-        if (!modalVisible && !summaryModalVisible) {
-          router.replace('/auth/login');
-        }
-      } else {
-        setIsAuthChecked(true);
-      }
-    }
-    // Only run when isAuthReady changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthReady]);
-
-  // Fetch notes only after auth check and when user is present
+  // Fetch notes when user is authenticated
   useEffect(() => {
     let isMounted = true;
 
     const loadNotes = async () => {
-      if (isAuthChecked && user && isMounted) {
+      if (user && isMounted) {
         await fetchNotes();
       }
     };
@@ -48,10 +31,17 @@ export function NotesScreen() {
     return () => {
       isMounted = false;
     };
-  }, [isAuthChecked, user, modalVisible]);
+  }, [user]);
+
+  // Only redirect to login if not in a modal and no user
+  useEffect(() => {
+    if (isAuthReady && !user && !modalVisible && !summaryModalVisible) {
+      router.replace('/auth/login');
+    }
+  }, [isAuthReady, user, modalVisible, summaryModalVisible]);
 
   // Don't render anything until auth check is complete
-  if (authLoading || !isAuthReady || !isAuthChecked) {
+  if (authLoading || !isAuthReady) {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#007AFF" />

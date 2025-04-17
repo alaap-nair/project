@@ -34,6 +34,12 @@ export const getFilenameFromUri = (uri: string): string => {
  */
 export const uploadFileToStorage = async (uri: string, folder: string = 'files'): Promise<string> => {
   try {
+    // Validate URI before proceeding
+    if (!uri) {
+      console.error('Invalid file URI: URI is empty or undefined');
+      throw new Error('Invalid file URI: URI is empty or undefined');
+    }
+    
     console.log(`Starting upload for file: ${uri} to folder: ${folder}`);
     
     // Handle file:// URI for iOS

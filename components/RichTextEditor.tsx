@@ -287,9 +287,13 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
       const noteData = {
         title: title.trim(),
         content: content.trim() || '',
-        audioUrl: processedAudioUrl || undefined,
         taskIds: []
       };
+      
+      // Only add audioUrl if it has a value
+      if (processedAudioUrl) {
+        noteData.audioUrl = processedAudioUrl;
+      }
       
       if (initialNote?._id) {
         await updateNote(initialNote._id, noteData);

@@ -90,9 +90,14 @@ const useNotesStore = create<NotesStore>((set) => ({
   updateNote: async (id, updatedNote) => {
     set({ loading: true, error: null });
     try {
+      // Filter out any undefined values that Firestore doesn't support
+      const filteredNote = Object.fromEntries(
+        Object.entries(updatedNote).filter(([_, value]) => value !== undefined)
+      );
+      
       const noteRef = doc(firestore, 'notes', id);
       await updateDoc(noteRef, {
-        ...updatedNote,
+        ...filteredNote,
         updatedAt: serverTimestamp()
       });
       
@@ -100,14 +105,14 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: state.notes.map((note) =>
           note._id === id ? { 
             ...note, 
-            ...updatedNote, 
+            ...filteredNote, 
             updatedAt: new Date().toISOString() 
           } : note
         ),
         loading: false
       }));
       
-      return { _id: id, ...updatedNote };
+      return { _id: id, ...filteredNote };
     } catch (error) {
       console.error('Error updating note:', error);
       set({ error: 'Failed to update note', loading: false });
@@ -182,6 +187,13 @@ const useNotesStore = create<NotesStore>((set) => ({
     set({ loading: true, error: null });
     try {
       console.log('Saving audio URL to note:', noteId, audioUrl);
+      
+      // Ensure we have a valid audio URL - abort if audioUrl is undefined or empty
+      if (!audioUrl) {
+        console.warn('Attempted to save empty audio URL');
+        set({ loading: false });
+        return { _id: noteId, audioUrl: '' };
+      }
       
       // Ensure the audio URL is properly formatted
       let processedAudioUrl = audioUrl;

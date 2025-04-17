@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
+import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
 
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'project' | 'other';
@@ -71,30 +72,113 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   fetchTasks: async () => {
     set({ loading: true, error: null });
     try {
-      const q = query(collection(firestore, 'tasks'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      
-      const tasksData = querySnapshot.docs.map(doc => ({
-        _id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate?.() || new Date(),
-      } as Task));
-      
-      set({ tasks: tasksData, loading: false });
+      try {
+        const q = query(collection(firestore, 'tasks'), orderBy('createdAt', 'desc'));
+        const querySnapshot = await enhancedGetDocs(q);
+        
+        const tasksData = querySnapshot.docs.map(doc => ({
+          _id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.() 
+            ? doc.data().createdAt.toDate().toISOString() 
+            : new Date().toISOString(),
+          updatedAt: doc.data().updatedAt?.toDate?.() 
+            ? doc.data().updatedAt.toDate().toISOString() 
+            : new Date().toISOString(),
+        } as Task));
+        
+        set({ tasks: tasksData, loading: false });
 
-      // Reschedule notifications for all tasks with reminders
-      tasksData.forEach(async (task: Task) => {
-        if (task.reminderTime && !task.completed) {
-          const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-          if (notificationId) {
-            const taskRef = doc(firestore, 'tasks', task._id);
-            await updateDoc(taskRef, {
-              notificationId,
-            });
+        // Reschedule notifications for all tasks with reminders
+        tasksData.forEach(async (task: Task) => {
+          if (task.reminderTime && !task.completed) {
+            try {
+              const notificationId = await scheduleTaskReminder(task, task.reminderTime);
+              if (notificationId) {
+                const taskRef = doc(firestore, 'tasks', task._id);
+                await updateDoc(taskRef, {
+                  notificationId,
+                });
+              }
+            } catch (notifError) {
+              console.error('Error scheduling notification for task:', task._id, notifError);
+              // Continue with other tasks even if one notification fails
+            }
           }
+        });
+      } catch (queryError: any) {
+        // Check if this is the missing index error
+        if (queryError.code === 'failed-precondition' || 
+            (queryError.message && queryError.message.includes('index'))) {
+          // Remove the error log and just show a warning
+          console.warn('Firebase index required for tasks query. Falling back to client-side sorting.');
+          
+          // Show UI prompt to create the index
+          handleIndexError(queryError);
+          
+          // Fall back to a simpler query without ordering
+          try {
+            console.log('Falling back to simple query without ordering');
+            const fallbackQuery = query(collection(firestore, 'tasks'));
+            const fallbackSnapshot = await enhancedGetDocs(fallbackQuery);
+            
+            // Process the data and sort in memory instead
+            const fallbackData = fallbackSnapshot.docs.map(doc => ({
+              _id: doc.id,
+              ...doc.data(),
+              createdAt: doc.data().createdAt?.toDate?.() 
+                ? doc.data().createdAt.toDate().toISOString() 
+                : new Date().toISOString(),
+              updatedAt: doc.data().updatedAt?.toDate?.() 
+                ? doc.data().updatedAt.toDate().toISOString() 
+                : new Date().toISOString(),
+            } as Task));
+            
+            // Sort tasks by createdAt in memory
+            fallbackData.sort((a, b) => 
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            
+            set({ 
+              tasks: fallbackData, 
+              loading: false,
+              error: 'Please create the required Firestore index for optimal performance. Check console for details.'
+            });
+            
+            // Provide a helpful message about creating the index
+            console.warn(
+              'To improve performance, please create a composite index on the "tasks" collection with fields:\n' +
+              '- createdAt (descending)\n' +
+              'You can create this index in the Firebase console.'
+            );
+            
+            // Schedule notifications for tasks even in fallback mode
+            fallbackData.forEach(async (task: Task) => {
+              if (task.reminderTime && !task.completed) {
+                try {
+                  const notificationId = await scheduleTaskReminder(task, task.reminderTime);
+                  if (notificationId) {
+                    const taskRef = doc(firestore, 'tasks', task._id);
+                    await updateDoc(taskRef, {
+                      notificationId,
+                    });
+                  }
+                } catch (notifError) {
+                  console.error('Error scheduling notification for task:', task._id, notifError);
+                }
+              }
+            });
+            
+            return;
+          } catch (fallbackError) {
+            console.error('Error with fallback query:', fallbackError);
+            throw fallbackError;
+          }
+        } else {
+          // This is not an index error, so rethrow
+          throw queryError;
         }
-      });
+      }
     } catch (error) {
       console.error('Error fetching tasks:', error);
       set({ error: 'Failed to fetch tasks', loading: false });

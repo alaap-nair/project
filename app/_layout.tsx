@@ -7,10 +7,12 @@ import { default as app, firestore } from '../config/firebase';
 import { checkFirebaseConnection, showConnectionAlert } from '../utils/apiUtils';
 import { initializeSampleData } from '../utils/sampleData';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useAuthStore } from '../store/auth';
 
 export default function RootLayout() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+  const cleanup = useAuthStore(state => state.cleanup);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -42,7 +44,12 @@ export default function RootLayout() {
     };
 
     initializeApp();
-  }, []);
+
+    // Cleanup function
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
 
   if (isInitializing) {
     return (
@@ -59,6 +66,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack
         screenOptions={{
+          headerShown: false,
           headerStyle: {
             backgroundColor: '#f5f5f5',
           },
@@ -69,6 +77,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="dark" />
     </GestureHandlerRootView>

@@ -6,22 +6,27 @@
   "scripts": {
     "dev": "EXPO_NO_TELEMETRY=1 expo start --web",
     "build:web": "expo export --platform web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.2",
+    "@react-native-async-storage/async-storage": "^1.24.0",
     "@react-native-community/datetimepicker": "8.2.0",
-    "@react-native-community/slider": "^4.5.6",
+    "@react-native-community/slider": "^4.5.5",
     "@react-native-community/voice": "^1.1.9",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
     "@shopify/flash-list": "1.7.3",
+    "autoprefixer": "^10.4.21",
     "axios": "^1.7.9",
     "date-fns": "^2.30.0",
     "expo": "~52.0.38",
     "expo-av": "^15.0.2",
     "expo-blur": "^14.0.3",
-    "expo-calendar": "^14.0.6",
+    "expo-calendar": "~14.0.6",
+    "expo-clipboard": "^7.0.1",
     "expo-constants": "^17.0.5",
     "expo-document-picker": "~13.0.3",
     "expo-file-system": "^18.0.11",
@@ -30,8 +35,8 @@
     "expo-image-picker": "^16.0.6",
     "expo-linear-gradient": "^14.0.2",
     "expo-linking": "^7.0.5",
-    "expo-notifications": "^0.29.14",
-    "expo-router": "~4.0.18",
+    "expo-notifications": "~0.29.14",
+    "expo-router": "~4.0.19",
     "expo-splash-screen": "^0.29.21",
     "expo-status-bar": "^2.0.1",
     "expo-symbols": "^0.2.2",
@@ -48,16 +53,57 @@
     "react-native-reanimated": "~3.16.1",
     "react-native-safe-area-context": "4.12.0",
     "react-native-screens": "~4.4.0",
+    "react-native-svg": "^15.11.2",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "^0.19.13",
     "react-native-webview": "13.12.5",
-    "zustand": "^4.4.7"
+    "zustand": "^4.4.7",
+    "expo-auth-session": "~6.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~18.3.12",
-    "@types/react-native": "^0.72.8",
+    "postcss-loader": "^8.1.1",
+    "postcss-preset-env": "^10.1.5",
     "tailwindcss": "3.3.2",
     "typescript": "^5.3.3"
+  },
+  "expo": {
+    "name": "Bolt App",
+    "slug": "bolt-app",
+    "version": "1.0.0",
+    "scheme": "bolt-app",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false
+      }
+    }
   }
 }

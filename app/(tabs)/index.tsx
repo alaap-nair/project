@@ -1,5 +1,5 @@
 import { View, StyleSheet, ActivityIndicator } from "react-native";
-import { useNotesStore } from "../../store/notes";
+import useNotesStore from "../../store/notes";
 import { useEffect, useState } from "react";
 import { NotesScreen as CustomNotesScreen } from "../../components/NotesScreen";
 
@@ -28,9 +28,15 @@ export default function NotesScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingTop: 60,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingTop: 60,
   }
 });

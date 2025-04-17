@@ -3,11 +3,12 @@ import { format } from 'date-fns';
 import { Link } from 'expo-router';
 import type { Note } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
-import { useNotesStore } from '../store/notes';
+import useNotesStore from '../store/notes';
+import { useAuthStore } from '../store/auth';
 import { NoteSummary } from './NoteSummary';
 import { TranscriptionManager } from './TranscriptionManager';
 import { AudioPlayer } from './AudioPlayer';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 interface NoteCardProps {
@@ -17,8 +18,12 @@ interface NoteCardProps {
 export function NoteCard({ note }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
   const { deleteNote } = useNotesStore();
+  const { user } = useAuthStore();
   const subject = subjects.find((s) => s._id === note.subjectId);
   const [showTranscription, setShowTranscription] = useState(false);
+
+  // Check if user has permission to interact with this note
+  const hasPermission = user && note.userId === user.uid;
 
   const handleTranscriptionComplete = (transcript: string) => {
     // This is now handled directly in the TranscriptionManager component
@@ -27,6 +32,12 @@ export function NoteCard({ note }: NoteCardProps) {
 
   const handleDeleteNote = (e) => {
     e.stopPropagation();
+    
+    if (!hasPermission) {
+      Alert.alert("Permission Denied", "You don't have permission to delete this note.");
+      return;
+    }
+    
     Alert.alert(
       "Delete Note",
       `Are you sure you want to delete "${note.title}"? This action cannot be undone.`,
@@ -59,12 +70,14 @@ export function NoteCard({ note }: NoteCardProps) {
             <Text style={styles.date}>
               {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
             </Text>
-            <Pressable 
-              style={styles.deleteButton}
-              onPress={handleDeleteNote}
-            >
-              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-            </Pressable>
+            {hasPermission && (
+              <Pressable 
+                style={styles.deleteButton}
+                onPress={handleDeleteNote}
+              >
+                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+              </Pressable>
+            )}
           </View>
         </View>
         {subject && (
@@ -95,11 +108,13 @@ export function NoteCard({ note }: NoteCardProps) {
             </Text>
           </View>
         ) : (
-          <TranscriptionManager 
-            onTranscriptionComplete={handleTranscriptionComplete}
-            existingAudioUri={note.audioUrl}
-            noteId={note._id}
-          />
+          hasPermission && (
+            <TranscriptionManager 
+              onTranscriptionComplete={handleTranscriptionComplete}
+              existingAudioUri={note.audioUrl}
+              noteId={note._id}
+            />
+          )
         )}
         <NoteSummary note={note} />
       </Pressable>

@@ -12,7 +12,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuthStore } from '../../store/auth';
-import { useUserStore } from '../../store/user';
 import { router, Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -25,7 +24,7 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     // Basic validation
-    if (!name.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
       Alert.alert('Error', 'All fields are required');
       return;
     }
@@ -41,7 +40,7 @@ export default function SignupScreen() {
     }
 
     try {
-      await signUp(email.trim(), password.trim(), name.trim());
+      await signUp(email.trim(), password, name.trim());
       
       // Show success message
       Alert.alert(
@@ -65,8 +64,12 @@ export default function SignupScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join our community of learners</Text>
@@ -82,6 +85,7 @@ export default function SignupScreen() {
                 onChangeText={setName}
                 editable={!isLoading}
                 autoCapitalize="words"
+                blurOnSubmit={true}
               />
             </View>
 
@@ -95,6 +99,8 @@ export default function SignupScreen() {
                 value={email}
                 onChangeText={setEmail}
                 editable={!isLoading}
+                blurOnSubmit={true}
+                textContentType="emailAddress"
               />
             </View>
 
@@ -103,10 +109,14 @@ export default function SignupScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Create a password"
-                secureTextEntry
+                secureTextEntry={true}
                 value={password}
                 onChangeText={setPassword}
                 editable={!isLoading}
+                blurOnSubmit={true}
+                textContentType="newPassword"
+                autoCorrect={false}
+                autoCapitalize="none"
               />
             </View>
 
@@ -115,10 +125,14 @@ export default function SignupScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Confirm your password"
-                secureTextEntry
+                secureTextEntry={true}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 editable={!isLoading}
+                blurOnSubmit={true}
+                textContentType="newPassword"
+                autoCorrect={false}
+                autoCapitalize="none"
               />
             </View>
 
@@ -139,7 +153,7 @@ export default function SignupScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Already have an account? </Text>
-            <Link href="/login" asChild>
+            <Link href="/auth/login" asChild>
               <TouchableOpacity>
                 <Text style={styles.loginText}>Sign In</Text>
               </TouchableOpacity>

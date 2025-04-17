@@ -4,9 +4,11 @@ import { AudioRecorder } from './AudioRecorder';
 import { AudioPlayer } from './AudioPlayer';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import { useNotesStore } from '../store/notes';
+import useNotesStore from '../store/notes';
+import { useAuthStore } from '../store/auth';
 import { apiClient } from '../config';
 import { uploadAudioToStorage, configureAudioPlaybackSession } from '../utils/audioUtils';
+import * as FileSystem from 'expo-file-system';
 
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
@@ -20,6 +22,7 @@ export function TranscriptionManager({
   noteId
 }: TranscriptionManagerProps) {
   const { addAudioToNote, addTranscriptToNote } = useNotesStore();
+  const { user } = useAuthStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(existingAudioUri || null);
@@ -42,6 +45,18 @@ export function TranscriptionManager({
     try {
       console.log('Raw recording URI:', uri);
       
+      // Check if user is authenticated
+      if (!user) {
+        setError('You must be logged in to save recordings');
+        return;
+      }
+      
+      // Validate URI
+      if (!uri || typeof uri !== 'string') {
+        setError('Invalid recording URI');
+        return;
+      }
+      
       // Fix potential URI format issues for local playback
       let fixedUri = uri;
       
@@ -62,7 +77,27 @@ export function TranscriptionManager({
           setIsUploading(true);
           setError(null);
           
-          const cloudStorageUrl = await uploadAudioToStorage(fixedUri);
+          // Check file exists before uploading
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(fixedUri);
+            if (!fileInfo.exists) {
+              throw new Error(`Recording file does not exist at path: ${fixedUri}`);
+            }
+            console.log('File info:', fileInfo);
+          } catch (fileError) {
+            console.error('Error checking file info:', fileError);
+            setError('Recording file could not be accessed. Please try again.');
+            return;
+          }
+          
+          // Upload to user-specific storage path
+          console.log('Starting upload to Firebase Storage...');
+          const cloudStorageUrl = await uploadAudioToStorage(fixedUri, `users/${user.uid}/audio`);
+          
+          if (!cloudStorageUrl) {
+            throw new Error('Upload completed but no URL was returned');
+          }
+          
           console.log('Uploaded to Firebase Storage:', cloudStorageUrl);
           
           // Save permanent URL to note
@@ -76,7 +111,12 @@ export function TranscriptionManager({
           handleTranscribe(cloudStorageUrl);
         } catch (err) {
           console.error('Error uploading and saving audio:', err);
-          setError('Failed to save audio recording. The recording is available temporarily but may not persist when you close the app.');
+          if (err instanceof Error) {
+            console.error('Error details:', err.message);
+            setError(`Failed to save audio: ${err.message}`);
+          } else {
+            setError('Failed to save audio recording. The recording is available temporarily but may not persist when you close the app.');
+          }
           
           // Still try to transcribe using the local URI
           handleTranscribe(fixedUri);
@@ -89,7 +129,12 @@ export function TranscriptionManager({
       }
     } catch (err) {
       console.error('Error handling recording completion:', err);
-      setError('An error occurred while processing the recording.');
+      if (err instanceof Error) {
+        console.error('Error details:', err.message);
+        setError(`Error: ${err.message}`);
+      } else {
+        setError('An error occurred while processing the recording.');
+      }
     }
   };
 

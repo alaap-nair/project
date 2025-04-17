@@ -1,75 +1,132 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
-import { withExpoSnack } from 'nativewind';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import useNotesStore from '../../store/notes';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-function TabLayout() {
+const TabLayout = () => {
+  const { setShowCreateModal } = useNotesStore();
+  // const insets = useSafeAreaInsets();
+  // const reducedInset = Math.max(insets.bottom - 8, 0);
+
   return (
     <Tabs
       screenOptions={{
-        headerShown: true,
         tabBarStyle: {
+          height: 60,
+          paddingBottom: 0,
           backgroundColor: '#fff',
-          ...(Platform.OS === 'web' ? {} : { elevation: 0, borderTopWidth: 0.5, borderTopColor: '#e2e2e2' }),
+          borderTopWidth: 0,
+          shadowColor: '#000',
+          shadowOffset: {
+            width: 0,
+            height: 4,
+          },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 5,
         },
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#8E8E93',
-        headerStyle: {
-          backgroundColor: '#fff',
+        tabBarShowLabel: false,
+        tabBarItemStyle: {
+          height: 60,
+          paddingVertical: 0,
         },
-        headerTintColor: '#007AFF',
-      }}>
+        headerShown: false,
+      }}
+    >
+      <Tabs.Screen
+        name="tasks"
+        options={{
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="home" size={24} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="subjects"
+        options={{
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="library" size={24} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="create"
+        options={{
+          tabBarButton: () => (
+            <View style={styles.addButtonContainer}>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => setShowCreateModal(true)}
+              >
+                <Ionicons name="add" size={32} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="index"
         options={{
           title: 'Notes',
-          headerTitle: 'My Notes',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="document-text" size={size} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" size={size} color={color} />
           ),
         }}
       />
+
       <Tabs.Screen
-        name="tasks"
+        name="profile"
         options={{
-          title: 'Tasks',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="checkbox" size={size} color={color} />
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
           ),
         }}
       />
+
       <Tabs.Screen
-        name="subjects"
+        name="test-firebase"
         options={{
-          title: 'Subjects',
-          headerTitle: 'My Subjects',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="bookmarks" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="calendar"
-        options={{
-          title: 'Calendar',
-          headerTitle: 'Schedule',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="calendar" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          headerTitle: 'Settings',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
+          title: 'Test Firebase',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="flame-outline" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
   );
-}
+};
 
-export default withExpoSnack(TabLayout);
+const styles = StyleSheet.create({
+  addButtonContainer: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    width: 70,
+    height: 70,
+    top: -20,
+  },
+  addButton: {
+    width: 60,
+    height: 60,
+    backgroundColor: '#007AFF',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+});
+
+export default TabLayout;
+

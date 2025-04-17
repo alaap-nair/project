@@ -15,24 +15,40 @@ interface AuthStore {
   user: User | null;
   isLoading: boolean;
   error: string | null;
+  isAuthReady: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetStore: () => void;
+  cleanup: () => void;
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: false,
   error: null,
+  isAuthReady: false,
 
   signIn: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
     try {
+      console.log(`Attempting to sign in with email: ${email}`);
       await signInWithEmailAndPassword(auth, email, password);
+      console.log('Sign in successful');
     } catch (error) {
       console.error('Error signing in:', error);
-      set({ error: 'Failed to sign in' });
+      let errorMessage = 'Failed to sign in';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if (errorMessage.includes('auth/invalid-email')) {
+          errorMessage = 'The email address is invalid.';
+        } else if (errorMessage.includes('auth/user-disabled')) {
+          errorMessage = 'This account has been disabled.';
+        } else if (errorMessage.includes('auth/user-not-found') || errorMessage.includes('auth/wrong-password')) {
+          errorMessage = 'Invalid email or password.';
+        }
+      }
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -42,13 +58,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   signUp: async (email: string, password: string, displayName: string) => {
     set({ isLoading: true, error: null });
     try {
-      // Create the user account
+      console.log(`Attempting to create account with email: ${email}`);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Update the user profile with display name
       await updateProfile(userCredential.user, { displayName });
-      
-      // Create initial user document in Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         uid: userCredential.user.uid,
         displayName,
@@ -75,10 +87,20 @@ export const useAuthStore = create<AuthStore>((set) => ({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      
     } catch (error) {
       console.error('Error signing up:', error);
-      set({ error: 'Failed to sign up' });
+      let errorMessage = 'Failed to sign up';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if (errorMessage.includes('auth/email-already-in-use')) {
+          errorMessage = 'This email is already in use. Please sign in or reset your password.';
+        } else if (errorMessage.includes('auth/invalid-email')) {
+          errorMessage = 'The email address is invalid.';
+        } else if (errorMessage.includes('auth/weak-password')) {
+          errorMessage = 'The password is too weak. Please use a stronger password.';
+        }
+      }
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -89,6 +111,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       await firebaseSignOut(auth);
+      set({ user: null, isAuthReady: true }); // Explicitly set user to null
     } catch (error) {
       console.error('Error signing out:', error);
       set({ error: 'Failed to sign out' });
@@ -99,11 +122,23 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   resetStore: () => {
-    set({ user: null, isLoading: false, error: null });
+    set({ user: null, isLoading: false, error: null, isAuthReady: true });
+  },
+
+  cleanup: () => {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
   },
 }));
 
-// Listen for auth state changes
-onAuthStateChanged(auth, (user) => {
-  useAuthStore.setState({ user });
-}); 
+// Set up auth state listener only once
+let unsubscribe: (() => void) | null = null;
+
+if (!unsubscribe) {
+  unsubscribe = onAuthStateChanged(auth, (user) => {
+    console.log('Auth state changed:', user ? `User ${user.uid} signed in` : 'User signed out');
+    useAuthStore.setState({ user, isAuthReady: true });
+  });
+} 

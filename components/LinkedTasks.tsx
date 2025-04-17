@@ -1,8 +1,8 @@
 import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import useNotesStore from '../store/notes';
 import { useTasksStore } from '../store/tasks';
-import { useNotesStore } from '../store/notes';
 import { format } from 'date-fns';
 
 interface LinkedTasksProps {

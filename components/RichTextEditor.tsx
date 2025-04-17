@@ -16,7 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
-import { useNotesStore } from '../store/notes';
+import useNotesStore from '../store/notes';
+import { useAuthStore } from '../store/auth';
 import { uploadFileToStorage } from '../utils/fileUtils';
 import { Audio } from 'expo-av';
 import { configureAudioSession } from '../utils/audioUtils';
@@ -132,19 +133,30 @@ interface RichTextEditorProps {
     title?: string;
     content?: string;
   };
+  linkToTaskId?: string;
 }
 
-const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
+const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorProps) => {
   const [title, setTitle] = useState(initialNote?.title || '');
   const [content, setContent] = useState(initialNote?.content || '');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [audioUri, setAudioUri] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const webViewRef = useRef<WebView>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const webViewRef = useRef<WebView | null>(null);
   
-  const { addNote, updateNote } = useNotesStore();
+  const { addNote, updateNote, loading, error } = useNotesStore();
+  const { user } = useAuthStore();
+
+  // Add error handling for authentication
+  useEffect(() => {
+    if (!user) {
+      Alert.alert(
+        'Authentication Required',
+        'You must be logged in to create or edit notes.',
+        [{ text: 'OK', onPress: onClose }]
+      );
+    }
+  }, [user]);
 
   // Handle messages from the WebView
   const handleMessage = (event: any) => {
@@ -158,132 +170,224 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
     }
   };
 
-  // Insert an image into the editor
+  // Function to insert image into the editor
   const insertImage = async (imageUrl: string) => {
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(`insertImage("${imageUrl}"); true;`);
-    }
+    const js = `insertImage("${imageUrl}");`;
+    webViewRef.current?.injectJavaScript(js);
   };
 
-  // Insert a file link into the editor
+  // Function to insert file link into the editor
   const insertFileLink = async (fileUrl: string, filename: string) => {
-    if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(
-        `insertFileLink("${fileUrl}", "${filename}"); true;`
-      );
-    }
+    const js = `insertFileLink("${fileUrl}", "${filename}");`;
+    webViewRef.current?.injectJavaScript(js);
   };
 
-  // Handle file picking
+  // Function to handle file picking
   const handleFilePick = async () => {
     try {
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please log in to add files to notes.');
+        return;
+      }
+
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
-        copyToCacheDirectory: true
+        copyToCacheDirectory: true,
       });
-      
-      if (result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setIsUploading(true);
-        
+
+      if (result.type === 'success') {
+        setIsSaving(true);
         try {
-          const fileUrl = await uploadFileToStorage(asset.uri, 'files');
+          // Generate a unique path in storage including the user ID for proper isolation
+          const storagePath = `users/${user.uid}/files/${Date.now()}_${result.name}`;
           
-          if (asset.mimeType?.startsWith('image/')) {
-            insertImage(fileUrl);
-          } else {
-            insertFileLink(fileUrl, asset.name);
+          // Upload the file to Firebase Storage
+          const fileUrl = await uploadFileToStorage(result.uri, storagePath);
+          
+          // Insert the file link in the editor
+          if (fileUrl) {
+            insertFileLink(fileUrl, result.name);
           }
         } catch (error) {
-          console.error('File upload error:', error);
-          Alert.alert('Upload Error', 'Failed to upload file. Please try again.');
+          console.error('Error uploading file:', error);
+          Alert.alert('Error', 'Failed to upload file. Please try again.');
         } finally {
-          setIsUploading(false);
+          setIsSaving(false);
         }
       }
     } catch (error) {
-      console.error('Document picker error:', error);
-      Alert.alert('Error', 'Failed to pick a document');
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to pick document. Please try again.');
     }
   };
 
-  // Start audio recording
+  // Function to handle starting audio recording
   const startRecording = async () => {
     try {
+      if (!user) {
+        Alert.alert('Authentication Required', 'Please log in to record audio.');
+        return;
+      }
+
+      console.log('Requesting permissions...');
+      await Audio.requestPermissionsAsync();
+      
       await configureAudioSession();
       
       console.log('Starting recording...');
-      const { status } = await Audio.requestPermissionsAsync();
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
       
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Please allow microphone access to record audio.');
-        return;
-      }
-      
-      setIsRecording(true);
-      
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
       setRecording(recording);
-    } catch (error) {
-      console.error('Failed to start recording', error);
-      setIsRecording(false);
-      Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      setIsRecording(true);
+      console.log('Recording started');
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
     }
   };
 
-  // Stop audio recording
+  // Function to handle stopping audio recording
   const stopRecording = async () => {
+    if (!recording) return;
     try {
-      if (!recording) {
-        setIsRecording(false);
-        return;
-      }
-      
       console.log('Stopping recording...');
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
-      
+      console.log('Recording stopped and stored at', uri);
+
       if (uri) {
-        console.log('Recording stopped, URI:', uri);
-        setAudioUri(uri);
+        setIsSaving(true);
+        
+        try {
+          // Generate a unique path in storage including the user ID for proper isolation
+          const storagePath = `users/${user.uid}/audio/${Date.now()}.m4a`;
+          
+          // Upload audio file to Firebase Storage
+          const audioUrl = await uploadFileToStorage(uri, storagePath);
+          
+          if (audioUrl) {
+            // Insert audio player in the editor
+            const audioElement = `<div><audio controls src="${audioUrl}"></audio><div>Recorded Audio</div></div>`;
+            const js = `document.execCommand('insertHTML', false, ${JSON.stringify(audioElement)});`;
+            webViewRef.current?.injectJavaScript(js);
+          }
+        } catch (error) {
+          console.error('Error uploading audio:', error);
+          Alert.alert('Error', 'Failed to upload audio. Please try again.');
+        } finally {
+          setIsSaving(false);
+        }
       }
-      
-      setIsRecording(false);
-      setRecording(null);
-    } catch (error) {
-      console.error('Failed to stop recording', error);
-      setIsRecording(false);
-      setRecording(null);
-      Alert.alert('Recording Error', 'Failed to save recording. Please try again.');
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      Alert.alert('Error', 'Failed to stop recording. Please try again.');
     }
+    
+    setRecording(null);
+    setIsRecording(false);
   };
 
-  // Submit the note
+  // Function to handle form submission
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Title is required');
+      Alert.alert('Error', 'Please enter a title for your note');
       return;
     }
 
-    setIsSubmitting(true);
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to save notes.');
+      return;
+    }
 
+    setIsSaving(true);
+    
     try {
-      // Upload audio if recorded
-      let processedAudioUrl = audioUri;
+      let noteId;
       
-      if (audioUri) {
+      if (initialNote?._id) {
+        // Update existing note
+        await updateNote(initialNote._id, {
+          title: title.trim(),
+          content: content.trim() || ' ', // Ensure content is never empty
+        });
+        noteId = initialNote._id;
+        console.log('Note updated successfully');
+      } else {
+        // Create new note with taskIds if linking to a task
+        const taskIds = linkToTaskId && typeof linkToTaskId === 'string' ? [linkToTaskId] : [];
+        
+        // Sanitize content to ensure it's never null or undefined
+        const sanitizedContent = content.trim() || ' ';
+        
+        // Create the note data object with all required fields
+        const noteData = {
+          title: title.trim(),
+          content: sanitizedContent,
+          taskIds: taskIds,
+          // Only include audioUrl if we have a recording
+          ...(recording && recording.getURI ? { audioUrl: null } : {})
+        };
+        
+        console.log('Creating note with:', {
+          title: noteData.title,
+          content: sanitizedContent.substring(0, 50) + '...',
+          taskIds: JSON.stringify(taskIds),
+          hasAudioField: noteData.hasOwnProperty('audioUrl')
+        });
+        
         try {
-          setIsUploading(true);
-          processedAudioUrl = await uploadFileToStorage(audioUri, 'audio');
-          setIsUploading(false);
-        } catch (error) {
-          console.error('Audio upload error:', error);
-          Alert.alert('Warning', 'Failed to upload audio recording, but note will be saved.');
+          const newNote = await addNote(noteData);
+          
+          if (newNote && newNote._id) {
+            noteId = newNote._id;
+            console.log('Note created successfully with ID:', noteId);
+            
+            // Upload the recording if exists
+            if (recording && recording.getURI && noteId) {
+              try {
+                const uri = recording.getURI();
+                if (uri) {
+                  console.log('Uploading recording from URI:', uri);
+                  // Use the dedicated function to add audio to the note after creation
+                  // This separates the concerns and allows for proper handling of the audio file
+                  const { addAudioToNote } = useNotesStore.getState();
+                  
+                  // Handle the audio upload in a separate step to avoid the initial undefined value
+                  await addAudioToNote(noteId, uri);
+                }
+              } catch (audioError) {
+                console.error('Error adding audio to note:', audioError);
+                // Continue with the note creation even if audio upload fails
+              }
+            }
+            
+            // If we have a task ID to link and the note was created successfully
+            if (linkToTaskId && noteId) {
+              try {
+                const { linkTaskToNote } = useNotesStore.getState();
+                await linkTaskToNote(noteId, linkToTaskId);
+                console.log(`Note linked to task: ${linkToTaskId}`);
+              } catch (linkError) {
+                console.error('Error linking task to note:', linkError);
+                // We don't want to fail the whole operation if just the linking fails
+              }
+            }
+          } else {
+            console.error('Note creation returned invalid response:', newNote);
+            throw new Error('Failed to create note: Invalid response');
+          }
+        } catch (createError) {
+          console.error('Error creating note:', createError);
+          if (createError instanceof Error) {
+            console.error('Error details:', createError.message);
+          }
+          throw createError;
         }
       }
       
+<<<<<<< HEAD
       const noteData = {
         title: title.trim(),
         content: content.trim() || '',
@@ -302,11 +406,18 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
       }
       
       onClose();
+=======
+      Alert.alert(
+        'Success', 
+        `Note ${initialNote?._id ? 'updated' : 'created'} successfully`,
+        [{ text: 'OK', onPress: onClose }]
+      );
+>>>>>>> 535a4c43f3d688258486811727499ec77996688b
     } catch (error) {
       console.error('Error saving note:', error);
-      Alert.alert('Error', 'Failed to save note. Please try again.');
+      Alert.alert('Error', `Failed to ${initialNote?._id ? 'update' : 'create'} note. Please try again.`);
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
     }
   };
 
@@ -328,15 +439,14 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
           </Text>
           <TouchableOpacity 
             onPress={handleSubmit}
-            disabled={isSubmitting || isUploading}
+            disabled={isSaving || !title.trim()}
             style={styles.saveButton}
           >
-            <Text style={[
-              styles.saveButtonText, 
-              (isSubmitting || isUploading) && styles.saveButtonTextDisabled
-            ]}>
-              {isSubmitting ? 'Saving...' : 'Save'}
-            </Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -381,7 +491,7 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
             )}
             
             {/* Audio URI indicator */}
-            {audioUri && !isRecording && (
+            {recording && !isRecording && (
               <View style={styles.audioUriContainer}>
                 <Ionicons name="mic" size={20} color="#007AFF" />
                 <Text style={styles.audioUriText}>Audio recording attached</Text>
@@ -389,7 +499,7 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
             )}
             
             {/* Upload indicator */}
-            {isUploading && (
+            {loading && (
               <View style={styles.uploadingIndicator}>
                 <ActivityIndicator size="small" color="#007AFF" />
                 <Text style={styles.uploadingText}>Uploading file...</Text>
@@ -401,27 +511,22 @@ const RichTextEditor = ({ onClose, initialNote }: RichTextEditorProps) => {
               <TouchableOpacity 
                 style={styles.toolbarButton}
                 onPress={handleFilePick}
-                disabled={isUploading || isSubmitting}
+                disabled={isSaving}
               >
                 <Ionicons name="document-attach" size={24} color="#007AFF" />
               </TouchableOpacity>
               
-              {!isRecording ? (
-                <TouchableOpacity 
-                  style={styles.toolbarButton}
-                  onPress={startRecording}
-                  disabled={isRecording || isUploading || isSubmitting}
-                >
-                  <Ionicons name="mic" size={24} color="#007AFF" />
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity 
-                  style={[styles.toolbarButton, styles.stopRecordingButton]}
-                  onPress={stopRecording}
-                >
-                  <Ionicons name="square" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity 
+                style={[styles.toolbarButton, isRecording && styles.activeRecording]}
+                onPress={isRecording ? stopRecording : startRecording}
+                disabled={isSaving}
+              >
+                <Ionicons 
+                  name={isRecording ? "stop-circle" : "mic"} 
+                  size={24} 
+                  color={isRecording ? "#ff3b30" : "#007AFF"} 
+                />
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -469,9 +574,6 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 17,
     fontWeight: '600',
-  },
-  saveButtonTextDisabled: {
-    opacity: 0.5,
   },
   scrollContainer: {
     flex: 1,
@@ -545,7 +647,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#F0F0F0',
   },
-  stopRecordingButton: {
+  activeRecording: {
     backgroundColor: '#FF3B30',
   },
   recordingIndicator: {

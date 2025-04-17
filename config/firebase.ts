@@ -1,7 +1,8 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -13,20 +14,30 @@ const firebaseConfig = {
   appId: "1:70256622721:web:e08844cc4cc1f78cfc2180",
 };
 
-// Check if Firebase app is already initialized
+// Initialize Firebase
 let app;
-try {
+let auth;
+let db;
+let storage;
+
+if (!getApps().length) {
   app = initializeApp(firebaseConfig);
-} catch (error) {
-  // Firebase app already exists, retrieve the existing instance
-  console.log('Firebase app already exists');
-  app = initializeApp();
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+  db = getFirestore(app);
+  storage = getStorage(app);
+} else {
+  app = getApp();
+  try {
+    auth = getAuth(app);
+  } catch (e) {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+  }
+  db = getFirestore(app);
+  storage = getStorage(app);
 }
 
-// Initialize Firebase services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const firestore = getFirestore(app); // Alias for backward compatibility
-export const storage = getStorage(app);
-
-export default app; 
+export { app, auth, db, storage }; 

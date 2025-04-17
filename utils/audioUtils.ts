@@ -31,8 +31,12 @@ export const uriToBlob = async (uri: string): Promise<Blob> => {
 };
 
 // Upload audio file to Firebase Storage and return permanent URL
-export const uploadAudioToStorage = async (uri: string): Promise<string> => {
+export const uploadAudioToStorage = async (uri: string, storagePath: string = 'audio'): Promise<string> => {
   try {
+    if (!uri || typeof uri !== 'string') {
+      throw new Error('Valid URI is required for audio upload');
+    }
+    
     console.log('Starting audio upload from URI:', uri);
     
     let uploadUri = uri;
@@ -46,7 +50,11 @@ export const uploadAudioToStorage = async (uri: string): Promise<string> => {
     
     // Create a reference to the storage location
     const filename = getFilenameFromUri(uploadUri);
-    const storageRef = ref(storage, `audio/${filename}`);
+    if (!filename) {
+      throw new Error('Could not determine filename from URI');
+    }
+    
+    const storageRef = ref(storage, `${storagePath}/${filename}`);
     
     let blob: Blob;
     
@@ -58,16 +66,34 @@ export const uploadAudioToStorage = async (uri: string): Promise<string> => {
       
       // Fallback to FileSystem if fetch doesn't work
       if (FileSystem.readAsStringAsync) {
-        const fileContent = await FileSystem.readAsStringAsync(uploadUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        // Convert base64 to blob
-        const base64Response = await fetch(`data:audio/m4a;base64,${fileContent}`);
-        blob = await base64Response.blob();
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(uploadUri);
+          if (!fileInfo.exists) {
+            throw new Error(`File does not exist at path: ${uploadUri}`);
+          }
+          
+          const fileContent = await FileSystem.readAsStringAsync(uploadUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          if (!fileContent) {
+            throw new Error('File content is empty');
+          }
+          
+          // Convert base64 to blob
+          const base64Response = await fetch(`data:audio/m4a;base64,${fileContent}`);
+          blob = await base64Response.blob();
+        } catch (fsError) {
+          console.error('FileSystem error:', fsError);
+          throw new Error(`Failed to read file: ${fsError.message}`);
+        }
       } else {
         throw new Error('Both fetch and FileSystem methods failed to read the file');
       }
+    }
+    
+    if (!blob || blob.size === 0) {
+      throw new Error('Generated blob is empty or invalid');
     }
     
     // Upload the blob to Firebase Storage
@@ -76,11 +102,17 @@ export const uploadAudioToStorage = async (uri: string): Promise<string> => {
     
     // Get the download URL
     const downloadURL = await getDownloadURL(storageRef);
+    if (!downloadURL) {
+      throw new Error('Failed to get download URL after upload');
+    }
     console.log('Download URL:', downloadURL);
     
     return downloadURL;
   } catch (error) {
     console.error('Error uploading audio to storage:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+    }
     throw error;
   }
 };

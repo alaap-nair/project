@@ -1,9 +1,12 @@
 import { create } from 'zustand';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
+import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
+import { useAuthStore } from './auth';
 
 export interface Note {
   _id: string;
+  userId: string; // Add userId field to associate notes with users
   title: string;
   content: string;
   subjectId?: string;
@@ -18,14 +21,19 @@ interface NotesStore {
   notes: Note[];
   loading: boolean;
   error: string | null;
+  showCreateModal: boolean;
+  modalVisible: boolean;
   fetchNotes: () => Promise<void>;
-  addNote: (note: Omit<Note, '_id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  addNote: (note: Omit<Note, '_id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<Note>;
   updateNote: (id: string, updatedNote: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   linkTaskToNote: (noteId: string, taskId: string) => Promise<void>;
   unlinkTaskFromNote: (noteId: string, taskId: string) => Promise<void>;
   addAudioToNote: (noteId: string, audioUrl: string) => Promise<void>;
   addTranscriptToNote: (noteId: string, transcript: string) => Promise<void>;
+  setShowCreateModal: (show: boolean) => void;
+  openNoteEditor: () => void;
+  closeNoteEditor: () => void;
 }
 
 // Create the store
@@ -33,46 +41,145 @@ const useNotesStore = create<NotesStore>((set) => ({
   notes: [],
   loading: false,
   error: null,
+  showCreateModal: false,
+  modalVisible: false,
+  setShowCreateModal: (show) => set({ showCreateModal: show }),
+  openNoteEditor: () => set({ modalVisible: true }),
+  closeNoteEditor: () => set({ modalVisible: false }),
 
   fetchNotes: async () => {
     set({ loading: true, error: null });
+    
+    const currentUser = useAuthStore.getState().user;
+    
+    if (!currentUser?.uid) {
+      set({ 
+        notes: [],
+        loading: false,
+        error: 'Authentication required'
+      });
+      return;
+    }
+
     try {
-      const q = query(collection(firestore, 'notes'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
+      // Query notes that belong to the current user with ordering
+      const q = query(
+        collection(firestore, 'notes'), 
+        where('userId', '==', currentUser.uid),
+        orderBy('createdAt', 'desc')
+      );
       
-      const notesData = querySnapshot.docs.map(doc => ({
-        _id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate?.() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate?.() || new Date(),
-      } as Note));
-      
-      set({ notes: notesData, loading: false });
+      try {
+        const querySnapshot = await enhancedGetDocs(q);
+        
+        const notesData = querySnapshot.docs.map(doc => ({
+          _id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate?.() ? 
+            doc.data().createdAt.toDate().toISOString() : 
+            new Date().toISOString(),
+          updatedAt: doc.data().updatedAt?.toDate?.() ? 
+            doc.data().updatedAt.toDate().toISOString() : 
+            new Date().toISOString(),
+        } as Note));
+        
+        set({ notes: notesData, loading: false, error: null });
+      } catch (queryError: any) {
+        if (queryError.code === 'failed-precondition' || 
+            (queryError.message && queryError.message.includes('index'))) {
+          console.warn('Firebase index required for notes query. Falling back to client-side sorting.');
+          
+          // Show UI prompt to create the index
+          handleIndexError(queryError);
+          
+          // Fall back to a simpler query without ordering
+          const fallbackQuery = query(
+            collection(firestore, 'notes'),
+            where('userId', '==', currentUser.uid)
+          );
+          
+          const fallbackSnapshot = await enhancedGetDocs(fallbackQuery);
+          
+          const fallbackData = fallbackSnapshot.docs.map(doc => ({
+            _id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate?.() ? 
+              doc.data().createdAt.toDate().toISOString() : 
+              new Date().toISOString(),
+            updatedAt: doc.data().updatedAt?.toDate?.() ? 
+              doc.data().updatedAt.toDate().toISOString() : 
+              new Date().toISOString(),
+          } as Note));
+          
+          // Sort notes by createdAt in memory
+          fallbackData.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          
+          set({ 
+            notes: fallbackData, 
+            loading: false,
+            error: null
+          });
+          return;
+        }
+        throw queryError;
+      }
     } catch (error) {
       console.error('Error fetching notes:', error);
-      set({ error: 'Failed to fetch notes', loading: false });
-      // Return empty array to prevent app crashes
-      set({ notes: [] });
+      set({ 
+        notes: [], 
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch notes'
+      });
     }
   },
 
   addNote: async (note) => {
     set({ loading: true, error: null });
     try {
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to create notes');
+      }
+      
+      // Sanitize the input to ensure it's Firestore-safe
+      const sanitizedNote = {
+        title: note.title || '',
+        content: note.content || '', // Ensure content is never undefined
+        subjectId: note.subjectId || null,
+        taskIds: Array.isArray(note.taskIds) ? note.taskIds.filter(id => typeof id === 'string') : [],
+        audioUrl: typeof note.audioUrl === 'string' && note.audioUrl.trim() !== '' ? note.audioUrl : null,
+        transcript: typeof note.transcript === 'string' ? note.transcript : null,
+      };
+      
+      // Remove any undefined or null fields to prevent Firestore errors
+      const firestoreData = Object.entries(sanitizedNote).reduce((acc, [key, value]) => {
+        // Only include fields with non-undefined values
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
+      
+      console.log('Adding note to Firestore:', JSON.stringify(firestoreData));
+      
       const docRef = await addDoc(collection(firestore, 'notes'), {
-        ...note,
-        taskIds: note.taskIds || [],
+        ...firestoreData,
+        userId: currentUser.uid, // Associate note with current user
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
       
       const newNote = {
         _id: docRef.id,
-        ...note,
-        taskIds: note.taskIds || [],
+        ...sanitizedNote,
+        userId: currentUser.uid,
+        taskIds: sanitizedNote.taskIds,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      };
+      } as Note;
       
       set((state) => ({
         notes: [newNote, ...state.notes],
@@ -90,10 +197,30 @@ const useNotesStore = create<NotesStore>((set) => ({
   updateNote: async (id, updatedNote) => {
     set({ loading: true, error: null });
     try {
+<<<<<<< HEAD
       // Filter out any undefined values that Firestore doesn't support
       const filteredNote = Object.fromEntries(
         Object.entries(updatedNote).filter(([_, value]) => value !== undefined)
       );
+=======
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to update notes');
+      }
+      
+      // First check if the note belongs to the current user
+      const state = useNotesStore.getState();
+      const noteToUpdate = state.notes.find(note => note._id === id);
+      
+      if (!noteToUpdate) {
+        throw new Error('Note not found');
+      }
+      
+      if (noteToUpdate.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to update this note');
+      }
+>>>>>>> 535a4c43f3d688258486811727499ec77996688b
       
       const noteRef = doc(firestore, 'notes', id);
       await updateDoc(noteRef, {
@@ -123,6 +250,24 @@ const useNotesStore = create<NotesStore>((set) => ({
   deleteNote: async (id) => {
     set({ loading: true, error: null });
     try {
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to delete notes');
+      }
+      
+      // First check if the note belongs to the current user
+      const state = useNotesStore.getState();
+      const noteToDelete = state.notes.find(note => note._id === id);
+      
+      if (!noteToDelete) {
+        throw new Error('Note not found');
+      }
+      
+      if (noteToDelete.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to delete this note');
+      }
+      
       await deleteDoc(doc(firestore, 'notes', id));
       
       set((state) => ({
@@ -138,23 +283,42 @@ const useNotesStore = create<NotesStore>((set) => ({
 
   linkTaskToNote: async (noteId: string, taskId: string) => {
     try {
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to link tasks to notes');
+      }
+      
       const state = useNotesStore.getState();
       const note = state.notes.find((n) => n._id === noteId);
       
-      if (note) {
-        const taskIds = [...(note.taskIds || [])];
-        if (!taskIds.includes(taskId)) {
-          taskIds.push(taskId);
-          
-          const noteRef = doc(firestore, 'notes', noteId);
-          await updateDoc(noteRef, { taskIds });
-          
-          set((state) => ({
-            notes: state.notes.map((n) =>
-              n._id === noteId ? { ...n, taskIds } : n
-            ),
-          }));
-        }
+      if (!note) {
+        throw new Error('Note not found');
+      }
+      
+      if (note.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to modify this note');
+      }
+      
+      const taskIds = [...(note.taskIds || [])];
+      if (!taskIds.includes(taskId)) {
+        taskIds.push(taskId);
+        
+        const noteRef = doc(firestore, 'notes', noteId);
+        await updateDoc(noteRef, { 
+          taskIds,
+          updatedAt: serverTimestamp()
+        });
+        
+        set((state) => ({
+          notes: state.notes.map((n) =>
+            n._id === noteId ? { 
+              ...n, 
+              taskIds,
+              updatedAt: new Date().toISOString()
+            } : n
+          ),
+        }));
       }
     } catch (error) {
       console.error("Error linking task to note:", error);
@@ -163,21 +327,40 @@ const useNotesStore = create<NotesStore>((set) => ({
 
   unlinkTaskFromNote: async (noteId: string, taskId: string) => {
     try {
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to unlink tasks from notes');
+      }
+      
       const state = useNotesStore.getState();
       const note = state.notes.find((n) => n._id === noteId);
       
-      if (note) {
-        const taskIds = (note.taskIds || []).filter(id => id !== taskId);
-        
-        const noteRef = doc(firestore, 'notes', noteId);
-        await updateDoc(noteRef, { taskIds });
-        
-        set((state) => ({
-          notes: state.notes.map((n) =>
-            n._id === noteId ? { ...n, taskIds } : n
-          ),
-        }));
+      if (!note) {
+        throw new Error('Note not found');
       }
+      
+      if (note.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to modify this note');
+      }
+      
+      const taskIds = (note.taskIds || []).filter(id => id !== taskId);
+      
+      const noteRef = doc(firestore, 'notes', noteId);
+      await updateDoc(noteRef, { 
+        taskIds,
+        updatedAt: serverTimestamp()
+      });
+      
+      set((state) => ({
+        notes: state.notes.map((n) =>
+          n._id === noteId ? { 
+            ...n, 
+            taskIds,
+            updatedAt: new Date().toISOString()
+          } : n
+        ),
+      }));
     } catch (error) {
       console.error("Error unlinking task from note:", error);
     }
@@ -186,8 +369,35 @@ const useNotesStore = create<NotesStore>((set) => ({
   addAudioToNote: async (noteId: string, audioUrl: string) => {
     set({ loading: true, error: null });
     try {
+      if (!noteId) {
+        throw new Error('Note ID is required');
+      }
+      
+      if (!audioUrl || typeof audioUrl !== 'string') {
+        throw new Error('Valid audio URL is required');
+      }
+      
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to add audio to notes');
+      }
+      
+      // Verify the note belongs to the current user
+      const state = useNotesStore.getState();
+      const note = state.notes.find(n => n._id === noteId);
+      
+      if (!note) {
+        throw new Error('Note not found');
+      }
+      
+      if (note.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to modify this note');
+      }
+      
       console.log('Saving audio URL to note:', noteId, audioUrl);
       
+<<<<<<< HEAD
       // Ensure we have a valid audio URL - abort if audioUrl is undefined or empty
       if (!audioUrl) {
         console.warn('Attempted to save empty audio URL');
@@ -197,10 +407,15 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       // Ensure the audio URL is properly formatted
       let processedAudioUrl = audioUrl;
+=======
+      // Process the audio URL if needed
+      let processedAudioUrl = audioUrl.trim();
+>>>>>>> 535a4c43f3d688258486811727499ec77996688b
       
-      // For stored URIs, we want to ensure they can be accessed across sessions
-      // This may require different handling based on your storage solution
-      // For now, we'll just log the URI format for debugging
+      // Validate the URL is not empty after trimming
+      if (!processedAudioUrl) {
+        throw new Error('Audio URL cannot be empty');
+      }
       
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
@@ -235,6 +450,24 @@ const useNotesStore = create<NotesStore>((set) => ({
   addTranscriptToNote: async (noteId: string, transcript: string) => {
     set({ loading: true, error: null });
     try {
+      const currentUser = useAuthStore.getState().user;
+      
+      if (!currentUser) {
+        throw new Error('You must be logged in to add transcripts to notes');
+      }
+      
+      // Verify the note belongs to the current user
+      const state = useNotesStore.getState();
+      const note = state.notes.find(n => n._id === noteId);
+      
+      if (!note) {
+        throw new Error('Note not found');
+      }
+      
+      if (note.userId !== currentUser.uid) {
+        throw new Error('You do not have permission to modify this note');
+      }
+      
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
         transcript,
@@ -261,5 +494,4 @@ const useNotesStore = create<NotesStore>((set) => ({
   },
 }));
 
-// Export the store
-export { useNotesStore };
+export default useNotesStore;

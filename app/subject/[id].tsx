@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useSubjectsStore } from '../../store/subjects';
 import { useTasksStore } from '../../store/tasks';
-import TaskCard from '../../components/TaskCard';
+import { TaskCard } from '../../components/TaskCard';
 
 export default function SubjectDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -33,7 +33,7 @@ export default function SubjectDetailScreen() {
 
   useEffect(() => {
     if (tasks.length > 0 && subject) {
-      const filteredTasks = tasks.filter(task => task.category === subject.name);
+      const filteredTasks = tasks.filter(task => task.subjectId === subject._id);
       setSubjectTasks(filteredTasks);
     }
   }, [tasks, subject]);
@@ -86,7 +86,7 @@ export default function SubjectDetailScreen() {
   const handleAddTask = () => {
     router.push({
       pathname: '/new-task',
-      params: { category: subject.name }
+      params: { subjectId: subject._id }
     });
   };
 
@@ -103,6 +103,16 @@ export default function SubjectDetailScreen() {
       <Stack.Screen 
         options={{
           title: subject.name,
+          headerLeft: () => (
+            <View style={styles.headerButtons}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+                <Ionicons name="arrow-back" size={22} color="#007AFF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => router.replace('/')} style={styles.headerButton}>
+                <Ionicons name="home" size={22} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+          ),
           headerRight: () => (
             <View style={styles.headerButtons}>
               <TouchableOpacity onPress={handleEditSubject} style={styles.headerButton}>
@@ -188,9 +198,11 @@ const styles = StyleSheet.create({
   },
   headerButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   headerButton: {
-    marginLeft: 16,
+    marginHorizontal: 8,
+    padding: 4,
   },
   subjectHeader: {
     flexDirection: 'row',

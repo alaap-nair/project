@@ -195,18 +195,19 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
         copyToCacheDirectory: true,
       });
 
-      if (result.type === 'success') {
+      if (result.canceled === false && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
         setIsSaving(true);
         try {
           // Generate a unique path in storage including the user ID for proper isolation
-          const storagePath = `users/${user.uid}/files/${Date.now()}_${result.name}`;
+          const storagePath = `users/${user.uid}/files/${Date.now()}_${asset.name}`;
           
           // Upload the file to Firebase Storage
-          const fileUrl = await uploadFileToStorage(result.uri, storagePath);
+          const fileUrl = await uploadFileToStorage(asset.uri, 'files');
           
           // Insert the file link in the editor
           if (fileUrl) {
-            insertFileLink(fileUrl, result.name);
+            insertFileLink(fileUrl, asset.name);
           }
         } catch (error) {
           console.error('Error uploading file:', error);
@@ -250,7 +251,7 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
 
   // Function to handle stopping audio recording
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!recording || !user) return;
     try {
       console.log('Stopping recording...');
       await recording.stopAndUnloadAsync();
@@ -289,6 +290,58 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
     setIsRecording(false);
   };
 
+  // Function to handle closing the editor
+  const handleClose = async () => {
+    // If we're in the middle of saving, confirm with the user
+    if (isSaving) {
+      Alert.alert(
+        'Save in Progress',
+        'A save operation is in progress. Are you sure you want to close the editor?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Close Anyway', 
+            style: 'destructive',
+            onPress: () => {
+              // Force closing
+              onClose();
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // If content has been modified, confirm with the user
+    if (content !== initialNote?.content || title !== initialNote?.title) {
+      Alert.alert(
+        'Discard Changes',
+        'You have unsaved changes. Are you sure you want to discard them?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Discard', 
+            style: 'destructive',
+            onPress: () => {
+              // Prevent accidental logout by ensuring we still have a reference to the user
+              if (user) {
+                console.log('Still logged in as user:', user.uid);
+              }
+              onClose();
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Prevent accidental logout by ensuring we still have a reference to the user
+    if (user) {
+      console.log('Still logged in as user:', user.uid);
+    }
+    onClose();
+  };
+
   // Function to handle form submission
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -301,6 +354,8 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
       return;
     }
 
+    // Store the user reference to avoid any potential auth context loss during async operations
+    const currentUser = { ...user };
     setIsSaving(true);
     
     try {
@@ -325,19 +380,18 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
         const noteData = {
           title: title.trim(),
           content: sanitizedContent,
-          taskIds: taskIds,
-          // Only include audioUrl if we have a recording
-          ...(recording && recording.getURI ? { audioUrl: null } : {})
+          taskIds: taskIds
         };
         
         console.log('Creating note with:', {
           title: noteData.title,
           content: sanitizedContent.substring(0, 50) + '...',
-          taskIds: JSON.stringify(taskIds),
-          hasAudioField: noteData.hasOwnProperty('audioUrl')
+          taskIds: JSON.stringify(taskIds)
         });
         
         try {
+          // Ensure we're still using the same user context
+          console.log('Using user ID for note creation:', currentUser.uid);
           const newNote = await addNote(noteData);
           
           if (newNote && newNote._id) {
@@ -351,7 +405,6 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
                 if (uri) {
                   console.log('Uploading recording from URI:', uri);
                   // Use the dedicated function to add audio to the note after creation
-                  // This separates the concerns and allows for proper handling of the audio file
                   const { addAudioToNote } = useNotesStore.getState();
                   
                   // Handle the audio upload in a separate step to avoid the initial undefined value
@@ -387,32 +440,10 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
         }
       }
       
-<<<<<<< HEAD
-      const noteData = {
-        title: title.trim(),
-        content: content.trim() || '',
-        taskIds: []
-      };
-      
-      // Only add audioUrl if it has a value
-      if (processedAudioUrl) {
-        noteData.audioUrl = processedAudioUrl;
-      }
-      
-      if (initialNote?._id) {
-        await updateNote(initialNote._id, noteData);
-      } else {
-        await addNote(noteData);
-      }
-      
-      onClose();
-=======
-      Alert.alert(
-        'Success', 
-        `Note ${initialNote?._id ? 'updated' : 'created'} successfully`,
-        [{ text: 'OK', onPress: onClose }]
-      );
->>>>>>> 535a4c43f3d688258486811727499ec77996688b
+      // Use a small timeout to ensure all Firestore operations have completed before closing
+      setTimeout(() => {
+        onClose();
+      }, 300);
     } catch (error) {
       console.error('Error saving note:', error);
       Alert.alert('Error', `Failed to ${initialNote?._id ? 'update' : 'create'} note. Please try again.`);
@@ -429,7 +460,7 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
       >
         <View style={styles.header}>
           <TouchableOpacity 
-            onPress={onClose}
+            onPress={handleClose}
             style={styles.closeButton}
           >
             <Ionicons name="close" size={24} color="#007AFF" />

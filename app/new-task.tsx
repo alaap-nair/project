@@ -1,16 +1,17 @@
 import { View, Text, TextInput, StyleSheet, Platform, ScrollView, Pressable, Modal, TouchableOpacity } from 'react-native';
 import { useState, useEffect } from 'react';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTasksStore, TaskPriority, TaskCategory } from '../store/tasks';
+import { useSubjectsStore } from '../store/subjects';
 import { REMINDER_TIMES } from '../services/notifications';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../services/notifications';
 import { format } from 'date-fns';
 
 const PRIORITIES: TaskPriority[] = ['high', 'medium', 'low'];
-const CATEGORIES: TaskCategory[] = ['study', 'homework', 'exam', 'project', 'other'];
+const CATEGORIES: TaskCategory[] = ['study', 'assignment', 'exam', 'reading', 'project', 'other'];
 
 const PRIORITY_COLORS = {
   high: '#FF3B30',
@@ -18,16 +19,20 @@ const PRIORITY_COLORS = {
   low: '#34C759',
 };
 
-const CATEGORY_COLORS = {
+const CATEGORY_COLORS: Record<TaskCategory, string> = {
   study: '#5856D6',
-  homework: '#007AFF',
+  assignment: '#007AFF',
   exam: '#FF2D55',
+  reading: '#4CD964',
   project: '#FF9500',
   other: '#8E8E93',
 };
 
 export default function NewTaskScreen() {
   const { addTask } = useTasksStore();
+  const { subjects } = useSubjectsStore();
+  const { subjectId } = useLocalSearchParams();
+  
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('medium');
@@ -39,7 +44,13 @@ export default function NewTaskScreen() {
 
   useEffect(() => {
     checkNotificationPermissions();
-  }, []);
+    if (subjectId && typeof subjectId === 'string') {
+      const subject = subjects.find(s => s._id === subjectId);
+      if (subject) {
+        console.log(`Creating task for subject: ${subject.name} (${subjectId})`);
+      }
+    }
+  }, [subjectId, subjects]);
 
   const checkNotificationPermissions = async () => {
     if (Platform.OS !== 'web') {
@@ -69,9 +80,10 @@ export default function NewTaskScreen() {
         description: description.trim(),
         priority,
         category,
-        deadline: dueDate.toISOString(),
+        dueDate: dueDate.toISOString(),
         completed: false,
         reminderTime,
+        subjectId: typeof subjectId === 'string' ? subjectId : null,
       });
 
       router.back();
@@ -93,7 +105,7 @@ export default function NewTaskScreen() {
     }
   };
 
-  const handleDateChange = (event, selectedDate) => {
+  const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }

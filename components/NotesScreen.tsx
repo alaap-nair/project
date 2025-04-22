@@ -8,9 +8,8 @@ import RichTextEditor from "./RichTextEditor"; // We'll create this component ne
 import { router } from "expo-router";
 
 export function NotesScreen() {
-  const { notes, fetchNotes, loading, error } = useNotesStore();
+  const { notes, fetchNotes, loading, error, showCreateModal, setShowCreateModal, modalVisible, openNoteEditor, closeNoteEditor } = useNotesStore();
   const { user, isLoading: authLoading, isAuthReady } = useAuthStore();
-  const [modalVisible, setModalVisible] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
   const [summary, setSummary] = useState('');
   const [summarizing, setSummarizing] = useState(false);
@@ -40,6 +39,14 @@ export function NotesScreen() {
     }
   }, [isAuthReady, user, modalVisible, summaryModalVisible]);
 
+  // Listen for changes to showCreateModal and update the local modalVisible state
+  useEffect(() => {
+    if (showCreateModal) {
+      openNoteEditor();
+      setShowCreateModal(false);
+    }
+  }, [showCreateModal]);
+
   // Don't render anything until auth check is complete
   if (authLoading || !isAuthReady) {
     return (
@@ -54,17 +61,17 @@ export function NotesScreen() {
     return null;
   }
 
-  const openNoteEditor = () => {
+  const handleLocalOpenNoteEditor = () => {
     if (!user) {
       Alert.alert('Authentication Required', 'Please log in to create notes.');
       return;
     }
     
-    setModalVisible(true);
+    openNoteEditor();
   };
 
   const handleCloseModal = () => {
-    setModalVisible(false);
+    closeNoteEditor();
   };
 
   const handleNotePress = (note) => {
@@ -132,7 +139,7 @@ export function NotesScreen() {
           <Text style={styles.emptyMessage}>No notes available</Text>
           <TouchableOpacity 
             style={styles.createButton}
-            onPress={openNoteEditor}
+            onPress={handleLocalOpenNoteEditor}
           >
             <Text style={styles.createButtonText}>Create Your First Note</Text>
           </TouchableOpacity>
@@ -191,6 +198,14 @@ export function NotesScreen() {
       >
         <RichTextEditor onClose={handleCloseModal} />
       </Modal>
+
+      {/* Floating Action Button for creating notes */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={handleLocalOpenNoteEditor}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -253,6 +268,22 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-  }
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
 });
 

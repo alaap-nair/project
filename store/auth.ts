@@ -205,4 +205,4 @@ export const useAuthStore = create<AuthStore>((set) => ({
 }));
 
 // Initialize the auth listener immediately
-initializeAuthListener(); 
+initializeAuthListener();

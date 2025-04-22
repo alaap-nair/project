@@ -53,7 +53,7 @@ const TabLayout = () => {
       />
 
       <Tabs.Screen
-        name="create"
+        name="add"
         options={{
           tabBarButton: () => (
             <View style={styles.addButtonContainer}>
@@ -84,16 +84,6 @@ const TabLayout = () => {
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="test-firebase"
-        options={{
-          title: 'Test Firebase',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="flame-outline" size={size} color={color} />
           ),
         }}
       />

@@ -32,9 +32,18 @@ export default function ProfileScreen() {
   const [calendarSync, setCalendarSync] = useState(false);
   const insets = useSafeAreaInsets();
 
+  const defaultProfile = {
+    displayName: user?.displayName || 'User',
+    email: user?.email || '',
+    photoURL: null,
+    uid: user?.uid || ''
+  };
+
   useEffect(() => {
     if (user) {
-      fetchProfile(user);
+      if (typeof fetchProfile === 'function') {
+        fetchProfile(user);
+      }
       getFriends();
       getFriendRequests();
       getEnrolledClasses();
@@ -78,22 +87,22 @@ export default function ProfileScreen() {
       >
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            {profile?.photoURL ? (
+            {(profile || defaultProfile)?.photoURL ? (
               <Image
-                source={{ uri: profile.photoURL }}
+                source={{ uri: (profile || defaultProfile).photoURL }}
                 style={styles.avatar}
                 resizeMode="cover"
               />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>
-                  {profile?.displayName?.[0]?.toUpperCase() || '?'}
+                  {(profile || defaultProfile)?.displayName?.[0]?.toUpperCase() || '?'}
                 </Text>
               </View>
             )}
           </View>
-          <Text style={styles.name}>{profile?.displayName || 'User'}</Text>
-          <Text style={styles.email}>{profile?.email || ''}</Text>
+          <Text style={styles.name}>{(profile || defaultProfile)?.displayName || 'User'}</Text>
+          <Text style={styles.email}>{(profile || defaultProfile)?.email || ''}</Text>
         </View>
 
         <View style={styles.section}>

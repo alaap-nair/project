@@ -213,146 +213,6 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
     webViewRef.current?.injectJavaScript(js);
   };
 
-  // Function to handle file picking
-  const handleFilePick = async () => {
-    const authStatus = checkAuth();
-    if (!authStatus.isValid) {
-      Alert.alert('Authentication Required', authStatus.message);
-      return;
-    }
-
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
-
-      if (result.type === 'success') {
-        setIsSaving(true);
-        try {
-          const storagePath = `users/${user.uid}/files/${Date.now()}_${result.name}`;
-          const fileUrl = await uploadFileToStorage(result.uri, storagePath);
-          if (fileUrl) {
-            insertFileLink(fileUrl, result.name);
-          }
-        } catch (error) {
-          console.error('Error uploading file:', error);
-          Alert.alert('Error', 'Failed to upload file. Please try again.');
-        } finally {
-          setIsSaving(false);
-        }
-      }
-    } catch (error) {
-      console.error('Error picking document:', error);
-      Alert.alert('Error', 'Failed to pick document. Please try again.');
-    }
-  };
-
-  // Function to handle starting audio recording
-  const startRecording = async () => {
-    const authStatus = checkAuth();
-    if (!authStatus.isValid) {
-      Alert.alert('Authentication Required', authStatus.message);
-      return;
-    }
-
-    try {
-      console.log('Requesting permissions...');
-      await Audio.requestPermissionsAsync();
-      await configureAudioSession();
-      
-      console.log('Starting recording...');
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setRecording(recording);
-      setIsRecording(true);
-      console.log('Recording started');
-    } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
-    }
-  };
-
-  // Function to handle stopping audio recording
-  const stopRecording = async () => {
-    if (!recording) return;
-    try {
-      console.log('Stopping recording...');
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      console.log('Recording stopped and stored at', uri);
-
-      if (uri) {
-        setIsSaving(true);
-        
-        try {
-          // Generate a unique path in storage including the user ID for proper isolation
-          const storagePath = `users/${user.uid}/audio/${Date.now()}.m4a`;
-          
-          // Upload audio file to Firebase Storage
-          const audioUrl = await uploadFileToStorage(uri, storagePath);
-          
-          if (audioUrl) {
-            // Insert audio player in the editor
-            const audioElement = `<div><audio controls src="${audioUrl}"></audio><div>Recorded Audio</div></div>`;
-            const js = `document.execCommand('insertHTML', false, ${JSON.stringify(audioElement)});`;
-            webViewRef.current?.injectJavaScript(js);
-          }
-        } catch (error) {
-          console.error('Error uploading audio:', error);
-          Alert.alert('Error', 'Failed to upload audio. Please try again.');
-        } finally {
-          setIsSaving(false);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to stop recording', err);
-      Alert.alert('Error', 'Failed to stop recording. Please try again.');
-    }
-    
-    setRecording(null);
-    setIsRecording(false);
-  };
-
-  // Function to handle form submission
-  const handleSubmit = async () => {
-    if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a title for your note');
-      return;
-    }
-
-    const authStatus = checkAuth();
-    if (!authStatus.isValid) {
-      Alert.alert('Authentication Required', authStatus.message);
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const noteData = {
-        title: title.trim(),
-        content,
-        userId: user.uid,
-        linkedTaskId: linkToTaskId,
-      };
-
-      if (initialNote?._id) {
-        await updateNote(initialNote._id, noteData);
-      } else {
-        await addNote(noteData);
-      }
-
-      onClose();
-    } catch (error) {
-      console.error('Error saving note:', error);
-      Alert.alert('Error', 'Failed to save note. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Cleanup function for WebView and other resources
   useEffect(() => {
     return () => {
@@ -403,6 +263,205 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
     }
   };
 
+  // Function to handle file picking
+  const handleFilePick = async () => {
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled === false && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setIsSaving(true);
+        try {
+          // Generate a unique path in storage including the user ID for proper isolation
+          const storagePath = `users/${user.uid}/files/${Date.now()}_${asset.name}`;
+          
+          // Upload the file to Firebase Storage
+          const fileUrl = await uploadFileToStorage(asset.uri, storagePath);
+          
+          if (fileUrl) {
+            insertFileLink(fileUrl, asset.name);
+          }
+        } catch (error) {
+          console.error('Error uploading file:', error);
+          Alert.alert('Error', 'Failed to upload file. Please try again.');
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to pick document. Please try again.');
+    }
+  };
+
+  // Function to handle starting audio recording
+  const startRecording = async () => {
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
+      return;
+    }
+
+    try {
+      console.log('Requesting permissions...');
+      await Audio.requestPermissionsAsync();
+      await configureAudioSession();
+      
+      console.log('Starting recording...');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(recording);
+      setIsRecording(true);
+      console.log('Recording started');
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
+    }
+  };
+
+  // Function to handle stopping audio recording
+  const stopRecording = async () => {
+    if (!recording || !user) return;
+    try {
+      console.log('Stopping recording...');
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      console.log('Recording stopped and stored at', uri);
+
+      if (uri) {
+        setIsSaving(true);
+        
+        try {
+          // Generate a unique path in storage including the user ID for proper isolation
+          const storagePath = `users/${user.uid}/audio/${Date.now()}.m4a`;
+          
+          // Upload audio file to Firebase Storage
+          const audioUrl = await uploadFileToStorage(uri, storagePath);
+          
+          if (audioUrl) {
+            // Insert audio player in the editor
+            const audioElement = `<div><audio controls src="${audioUrl}"></audio><div>Recorded Audio</div></div>`;
+            const js = `document.execCommand('insertHTML', false, ${JSON.stringify(audioElement)});`;
+            webViewRef.current?.injectJavaScript(js);
+          }
+        } catch (error) {
+          console.error('Error uploading audio:', error);
+          Alert.alert('Error', 'Failed to upload audio. Please try again.');
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      Alert.alert('Error', 'Failed to stop recording. Please try again.');
+    }
+    
+    setRecording(null);
+    setIsRecording(false);
+  };
+
+  // Function to handle closing the editor
+  const handleClose = async () => {
+    // If we're in the middle of saving, confirm with the user
+    if (isSaving) {
+      Alert.alert(
+        'Save in Progress',
+        'A save operation is in progress. Are you sure you want to close the editor?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Close Anyway', 
+            style: 'destructive',
+            onPress: () => {
+              // Force closing
+              onClose();
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // If content has been modified, confirm with the user
+    if (content !== initialNote?.content || title !== initialNote?.title) {
+      Alert.alert(
+        'Discard Changes',
+        'You have unsaved changes. Are you sure you want to discard them?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Discard', 
+            style: 'destructive',
+            onPress: () => {
+              // Prevent accidental logout by ensuring we still have a reference to the user
+              if (user) {
+                console.log('Still logged in as user:', user.uid);
+              }
+              onClose();
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Prevent accidental logout by ensuring we still have a reference to the user
+    if (user) {
+      console.log('Still logged in as user:', user.uid);
+    }
+    onClose();
+  };
+
+  // Function to handle form submission
+  const handleSubmit = async () => {
+    if (!title.trim()) {
+      Alert.alert('Error', 'Please enter a title for your note');
+      return;
+    }
+
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
+      return;
+    }
+
+    // Store the user reference to avoid any potential auth context loss during async operations
+    const currentUser = { ...user };
+    setIsSaving(true);
+    try {
+      const noteData = {
+        title: title.trim(),
+        content,
+        userId: user.uid,
+        linkedTaskId: linkToTaskId,
+      };
+
+      if (initialNote?._id) {
+        await updateNote(initialNote._id, noteData);
+      } else {
+        await addNote(noteData);
+      }
+
+      onClose();
+    } catch (error) {
+      console.error('Error saving note:', error);
+      Alert.alert('Error', 'Failed to save note. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <View style={styles.modalContainer}>
       <KeyboardAvoidingView 
@@ -411,7 +470,7 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
       >
         <View style={styles.header}>
           <TouchableOpacity 
-            onPress={onClose}
+            onPress={handleClose}
             style={styles.closeButton}
           >
             <Ionicons name="close" size={24} color="#007AFF" />

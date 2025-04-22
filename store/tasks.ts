@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { scheduleTaskReminder, cancelTaskReminder, updateTaskReminder } from '../services/notifications';
 import { CalendarService } from '../services/calendar';
@@ -11,17 +11,17 @@ export type TaskCategory = 'study' | 'assignment' | 'exam' | 'reading' | 'projec
 export interface Task {
   _id: string;
   title: string;
-  description: string;
-  priority: TaskPriority;
-  category: TaskCategory;
-  dueDate: string;
+  description?: string;
+  date: string | null;
   completed: boolean;
-  reminderTime?: number; // minutes before due date
-  notificationId?: string;
-  noteIds: string[];  // Array of linked note IDs
-  calendarEventId?: string;
-  createdAt: string;
-  updatedAt: string;
+  subjectId: string | null;
+  priority?: TaskPriority;
+  category?: TaskCategory;
+  dueDate?: string;
+  notificationId?: string | null;
+  noteIds?: string[];
+  reminderTime?: number | null;
+  updatedAt?: string;
 }
 
 export type TimeframeFilter = 'today' | 'week' | 'month' | 'all';
@@ -43,20 +43,21 @@ interface TasksStore {
   loading: boolean;
   error: string | null;
   fetchTasks: () => Promise<void>;
-  addTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateTask: (id: string, task: Partial<Task>) => Promise<void>;
-  deleteTask: (id: string) => Promise<void>;
-  toggleTaskCompletion: (id: string) => Promise<void>;
-  setTaskReminder: (id: string, reminderTime: number) => Promise<void>;
-  removeTaskReminder: (id: string) => Promise<void>;
-  linkNoteToTask: (taskId: string, noteId: string) => Promise<void>;
-  unlinkNoteFromTask: (taskId: string, noteId: string) => Promise<void>;
+  addTask: (task: Omit<Task, '_id'>) => Promise<Task>;
+  updateTask: (id: string, task: Partial<Task>) => Promise<Task>;
+  deleteTask: (id: string) => Promise<boolean>;
+  toggleTaskStatus: (id: string) => Promise<Task>;
+  setTaskReminder: (id: string, reminderTime: number) => Promise<boolean>;
+  removeTaskReminder: (id: string) => Promise<boolean>;
+  linkNoteToTask: (taskId: string, noteId: string) => Promise<boolean>;
+  unlinkNoteFromTask: (taskId: string, noteId: string) => Promise<boolean>;
   initializeCalendarSync: () => Promise<void>;
   toggleCalendarSync: () => Promise<void>;
   retryCalendarSync: () => Promise<void>;
   clearCalendarSyncError: () => void;
   summarizeTasks: (options?: SummarizeOptions) => Promise<string>;
   clearSummary: () => void;
+  getTasksBySubject: (subjectId: string) => Task[];
 }
 
 export const useTasksStore = create<TasksStore>((set, get) => ({
@@ -72,117 +73,19 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   fetchTasks: async () => {
     set({ loading: true, error: null });
     try {
-      try {
-        const q = query(collection(firestore, 'tasks'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await enhancedGetDocs(q);
-        
-        const tasksData = querySnapshot.docs.map(doc => ({
-          _id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate?.() 
-            ? doc.data().createdAt.toDate().toISOString() 
-            : new Date().toISOString(),
-          updatedAt: doc.data().updatedAt?.toDate?.() 
-            ? doc.data().updatedAt.toDate().toISOString() 
-            : new Date().toISOString(),
-        } as Task));
-        
-        set({ tasks: tasksData, loading: false });
-
-        // Reschedule notifications for all tasks with reminders
-        tasksData.forEach(async (task: Task) => {
-          if (task.reminderTime && !task.completed) {
-            try {
-              const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-              if (notificationId) {
-                const taskRef = doc(firestore, 'tasks', task._id);
-                await updateDoc(taskRef, {
-                  notificationId,
-                });
-              }
-            } catch (notifError) {
-              console.error('Error scheduling notification for task:', task._id, notifError);
-              // Continue with other tasks even if one notification fails
-            }
-          }
-        });
-      } catch (queryError: any) {
-        // Check if this is the missing index error
-        if (queryError.code === 'failed-precondition' || 
-            (queryError.message && queryError.message.includes('index'))) {
-          // Remove the error log and just show a warning
-          console.warn('Firebase index required for tasks query. Falling back to client-side sorting.');
-          
-          // Show UI prompt to create the index
-          handleIndexError(queryError);
-          
-          // Fall back to a simpler query without ordering
-          try {
-            console.log('Falling back to simple query without ordering');
-            const fallbackQuery = query(collection(firestore, 'tasks'));
-            const fallbackSnapshot = await enhancedGetDocs(fallbackQuery);
-            
-            // Process the data and sort in memory instead
-            const fallbackData = fallbackSnapshot.docs.map(doc => ({
-              _id: doc.id,
-              ...doc.data(),
-              createdAt: doc.data().createdAt?.toDate?.() 
-                ? doc.data().createdAt.toDate().toISOString() 
-                : new Date().toISOString(),
-              updatedAt: doc.data().updatedAt?.toDate?.() 
-                ? doc.data().updatedAt.toDate().toISOString() 
-                : new Date().toISOString(),
-            } as Task));
-            
-            // Sort tasks by createdAt in memory
-            fallbackData.sort((a, b) => 
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-            
-            set({ 
-              tasks: fallbackData, 
-              loading: false,
-              error: 'Please create the required Firestore index for optimal performance. Check console for details.'
-            });
-            
-            // Provide a helpful message about creating the index
-            console.warn(
-              'To improve performance, please create a composite index on the "tasks" collection with fields:\n' +
-              '- createdAt (descending)\n' +
-              'You can create this index in the Firebase console.'
-            );
-            
-            // Schedule notifications for tasks even in fallback mode
-            fallbackData.forEach(async (task: Task) => {
-              if (task.reminderTime && !task.completed) {
-                try {
-                  const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-                  if (notificationId) {
-                    const taskRef = doc(firestore, 'tasks', task._id);
-                    await updateDoc(taskRef, {
-                      notificationId,
-                    });
-                  }
-                } catch (notifError) {
-                  console.error('Error scheduling notification for task:', task._id, notifError);
-                }
-              }
-            });
-            
-            return;
-          } catch (fallbackError) {
-            console.error('Error with fallback query:', fallbackError);
-            throw fallbackError;
-          }
-        } else {
-          // This is not an index error, so rethrow
-          throw queryError;
-        }
-      }
+      const q = query(collection(firestore, 'tasks'), orderBy('date'));
+      const querySnapshot = await getDocs(q);
+      
+      const tasksData = querySnapshot.docs.map(doc => ({
+        _id: doc.id,
+        ...doc.data(),
+      } as Task));
+      
+      set({ tasks: tasksData, loading: false });
     } catch (error) {
       console.error('Error fetching tasks:', error);
       set({ error: 'Failed to fetch tasks', loading: false });
-      // Return empty array instead of throwing to prevent app crashes
+      // Return empty array to prevent app crashes
       set({ tasks: [] });
     }
   },
@@ -258,59 +161,23 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   addTask: async (task) => {
     set({ loading: true, error: null });
     try {
-      console.log('Preparing to add task:', task);
-      
-      // Schedule reminder if reminderTime is set
-      let notificationId = null;
-      if (task.reminderTime) {
-        try {
-          notificationId = await scheduleTaskReminder(task as Task, task.reminderTime);
-          console.log('Scheduled notification with ID:', notificationId);
-        } catch (notificationError) {
-          console.error('Error scheduling notification:', notificationError);
-          // Continue with task creation even if notification fails
-        }
-      }
-
-      console.log('Adding task to Firestore:', { ...task, notificationId });
-      
       const docRef = await addDoc(collection(firestore, 'tasks'), {
         ...task,
-        noteIds: task.noteIds || [],
-        notificationId,
+        completed: task.completed || false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
       
       const newTask = {
         _id: docRef.id,
-        ...task,
-        noteIds: task.noteIds || [],
-        notificationId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        ...task
       };
-      
-      console.log('Task created successfully:', newTask);
       
       set((state) => ({
         tasks: [...state.tasks, newTask],
         loading: false
       }));
-
-      // Sync with calendar if enabled
-      if (get().calendarSyncEnabled) {
-        try {
-          const calendarService = CalendarService.getInstance();
-          const syncSuccess = await calendarService.syncTaskWithCalendar(newTask);
-          if (!syncSuccess) {
-            throw new Error('Failed to sync task with calendar');
-          }
-        } catch (error) {
-          console.error('Calendar sync error:', error);
-          set({ calendarSyncError: 'Failed to sync new task with calendar' });
-        }
-      }
+      
       return newTask;
     } catch (error) {
       console.error('Error adding task:', error);
@@ -320,32 +187,8 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
   },
 
   updateTask: async (id, updatedTask) => {
+    set({ loading: true, error: null });
     try {
-      // Handle reminder updates
-      if ('reminderTime' in updatedTask || 'dueDate' in updatedTask) {
-        const state = get();
-        const task = state.tasks.find((t) => t._id === id);
-        if (task) {
-          const newTask = { ...task, ...updatedTask };
-          
-          // Cancel existing reminder
-          if (task.notificationId) {
-            await cancelTaskReminder(task._id);
-          }
-          
-          // Schedule new reminder if needed
-          if (newTask.reminderTime && !newTask.completed) {
-            const notificationId = await updateTaskReminder(newTask, newTask.reminderTime);
-            if (notificationId) {
-              updatedTask.notificationId = notificationId;
-            }
-          } else if ('reminderTime' in updatedTask && !updatedTask.reminderTime) {
-            // If reminderTime is explicitly set to null/undefined, remove notification
-            updatedTask.notificationId = null;
-          }
-        }
-      }
-      
       const taskRef = doc(firestore, 'tasks', id);
       await updateDoc(taskRef, {
         ...updatedTask,
@@ -354,114 +197,67 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
       
       set((state) => ({
         tasks: state.tasks.map((task) =>
-          task._id === id ? { 
-            ...task, 
-            ...updatedTask, 
-            updatedAt: new Date().toISOString() 
-          } : task
+          task._id === id ? { ...task, ...updatedTask } : task
         ),
+        loading: false
       }));
       
-      // Sync with calendar if enabled
-      if (get().calendarSyncEnabled) {
-        try {
-          const state = get();
-          const updatedTaskObj = state.tasks.find(t => t._id === id);
-          if (updatedTaskObj) {
-            const calendarService = CalendarService.getInstance();
-            await calendarService.syncTaskWithCalendar(updatedTaskObj);
-          }
-        } catch (error) {
-          console.error('Calendar sync error during update:', error);
-          set({ calendarSyncError: 'Failed to sync updated task with calendar' });
-        }
-      }
-      
-      return { _id: id, ...updatedTask };
+      const updatedTaskData = get().tasks.find(task => task._id === id) || { _id: id, ...updatedTask } as Task;
+      return updatedTaskData;
     } catch (error) {
       console.error('Error updating task:', error);
-      set({ error: 'Failed to update task' });
+      set({ error: 'Failed to update task', loading: false });
       throw error;
     }
   },
 
   deleteTask: async (id) => {
+    set({ loading: true, error: null });
     try {
-      const state = get();
-      const task = state.tasks.find(t => t._id === id);
+      await deleteDoc(doc(firestore, 'tasks', id));
       
-      if (task) {
-        // Cancel notification if exists
-        if (task.notificationId) {
-          await cancelTaskReminder(task._id);
-        }
-        
-        // Delete from Firestore
-        await deleteDoc(doc(firestore, 'tasks', id));
-        
-        set((state) => ({
-          tasks: state.tasks.filter((task) => task._id !== id),
-        }));
-        
-        return true;
-      }
-      return false;
+      set((state) => ({
+        tasks: state.tasks.filter((task) => task._id !== id),
+        loading: false
+      }));
+      
+      return true;
     } catch (error) {
       console.error('Error deleting task:', error);
-      set({ error: 'Failed to delete task' });
+      set({ error: 'Failed to delete task', loading: false });
       throw error;
     }
   },
 
-  toggleTaskCompletion: async (id) => {
+  toggleTaskStatus: async (id) => {
+    set({ loading: true, error: null });
     try {
-      const state = get();
-      const task = state.tasks.find(t => t._id === id);
-      
-      if (task) {
-        const completed = !task.completed;
-        
-        // Update in Firestore
-        const taskRef = doc(firestore, 'tasks', id);
-        await updateDoc(taskRef, {
-          completed,
-          updatedAt: serverTimestamp()
-        });
-        
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t._id === id ? { ...t, completed, updatedAt: new Date().toISOString() } : t
-          ),
-        }));
-        
-        // Handle notification based on completion status
-        if (completed && task.notificationId) {
-          await cancelTaskReminder(task._id);
-        } else if (!completed && task.reminderTime) {
-          const notificationId = await scheduleTaskReminder(task, task.reminderTime);
-          if (notificationId) {
-            await updateDoc(taskRef, { notificationId });
-          }
-        }
-        
-        // Sync with calendar if enabled
-        if (get().calendarSyncEnabled) {
-          try {
-            const updatedTask = { ...task, completed };
-            const calendarService = CalendarService.getInstance();
-            await calendarService.syncTaskWithCalendar(updatedTask);
-          } catch (error) {
-            console.error('Calendar sync error during completion toggle:', error);
-            set({ calendarSyncError: 'Failed to sync task completion status with calendar' });
-          }
-        }
-        
-        return completed;
+      const task = get().tasks.find((task) => task._id === id);
+      if (!task) {
+        throw new Error('Task not found');
       }
-      return false;
+      
+      const taskRef = doc(firestore, 'tasks', id);
+      await updateDoc(taskRef, {
+        completed: !task.completed,
+        updatedAt: serverTimestamp()
+      });
+      
+      set((state) => ({
+        tasks: state.tasks.map((task) =>
+          task._id === id ? { ...task, completed: !task.completed } : task
+        ),
+        loading: false
+      }));
+      
+      const updatedTask = get().tasks.find(task => task._id === id);
+      if (!updatedTask) {
+        throw new Error('Updated task not found');
+      }
+      return updatedTask;
     } catch (error) {
-      console.error('Error toggling task completion:', error);
-      set({ error: 'Failed to update task completion status' });
+      console.error('Error toggling task status:', error);
+      set({ error: 'Failed to update task status', loading: false });
       throw error;
     }
   },
@@ -647,6 +443,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         switch (options.timeframe) {
           case 'today':
             filteredTasks = filteredTasks.filter(task => {
+              if (!task.dueDate) return false;
               const dueDate = new Date(task.dueDate);
               return dueDate >= today && dueDate < new Date(today.getTime() + 24 * 60 * 60 * 1000);
             });
@@ -654,6 +451,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
           case 'week':
             const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
             filteredTasks = filteredTasks.filter(task => {
+              if (!task.dueDate) return false;
               const dueDate = new Date(task.dueDate);
               return dueDate >= today && dueDate < weekEnd;
             });
@@ -661,6 +459,7 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
           case 'month':
             const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
             filteredTasks = filteredTasks.filter(task => {
+              if (!task.dueDate) return false;
               const dueDate = new Date(task.dueDate);
               return dueDate >= today && dueDate < monthEnd;
             });
@@ -679,10 +478,11 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
         const tasksByCategory: Record<string, Task[]> = {};
         
         filteredTasks.forEach(task => {
-          if (!tasksByCategory[task.category]) {
-            tasksByCategory[task.category] = [];
+          const categoryKey = task.category || 'other';
+          if (!tasksByCategory[categoryKey]) {
+            tasksByCategory[categoryKey] = [];
           }
-          tasksByCategory[task.category].push(task);
+          tasksByCategory[categoryKey].push(task);
         });
         
         // Build summary text
@@ -694,14 +494,15 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
           // Sort by priority and due date
           tasks.sort((a, b) => {
             const priorityOrder = { high: 0, medium: 1, low: 2 };
-            if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-              return priorityOrder[a.priority] - priorityOrder[b.priority];
+            if (a.priority && b.priority && a.priority in priorityOrder && b.priority in priorityOrder) {
+              return priorityOrder[a.priority as keyof typeof priorityOrder] - priorityOrder[b.priority as keyof typeof priorityOrder];
             }
-            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+            return (a.dueDate && b.dueDate) ? 
+              new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime() : 0;
           });
           
           tasks.forEach(task => {
-            const dueDate = new Date(task.dueDate).toLocaleDateString();
+            const dueDate = task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date';
             const status = task.completed ? '✓' : '○';
             const priority = task.priority === 'high' ? '⚠️' : task.priority === 'medium' ? '⚠' : '•';
             
@@ -723,5 +524,9 @@ export const useTasksStore = create<TasksStore>((set, get) => ({
 
   clearSummary: () => {
     set({ summary: null });
-  }
+  },
+
+  getTasksBySubject: (subjectId: string) => {
+    return get().tasks.filter((task) => task.subjectId === subjectId);
+  },
 })); 

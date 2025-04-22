@@ -42,4 +42,4 @@ storage = getStorage(app);
 
 console.log('Firebase services initialized successfully');
 
-export { app, auth, db, storage }; 
+export { app, auth, db, storage };

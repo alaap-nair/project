@@ -13,9 +13,9 @@ interface SubjectsStore {
   loading: boolean;
   error: string | null;
   fetchSubjects: () => Promise<void>;
-  addSubject: (subject: Omit<Subject, '_id'>) => Promise<void>;
-  updateSubject: (id: string, subject: Partial<Subject>) => Promise<void>;
-  deleteSubject: (id: string) => Promise<void>;
+  addSubject: (subject: Omit<Subject, '_id'>) => Promise<Subject>;
+  updateSubject: (id: string, subject: Partial<Subject>) => Promise<Subject>;
+  deleteSubject: (id: string) => Promise<boolean>;
 }
 
 export const useSubjectsStore = create<SubjectsStore>((set) => ({
@@ -86,7 +86,7 @@ export const useSubjectsStore = create<SubjectsStore>((set) => ({
         loading: false
       }));
       
-      return { _id: id, ...updatedSubject };
+      return { _id: id, ...updatedSubject } as Subject;
     } catch (error) {
       console.error('Error updating subject:', error);
       set({ error: 'Failed to update subject', loading: false });

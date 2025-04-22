@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useLocalSearchParams, router, Stack, useFocusEffect } from 'expo-router';
+import { useEffect, useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { useSubjectsStore } from '../../store/subjects';
@@ -15,6 +15,19 @@ export default function SubjectDetailScreen() {
   const [subjectTasks, setSubjectTasks] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Refresh tasks when screen comes into focus (like returning from new-task screen)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Subject screen focused, refreshing tasks...');
+      if (subject) {
+        loadTasks();
+      }
+      return () => {
+        // Cleanup if needed
+      };
+    }, [subject])
+  );
+
   useEffect(() => {
     if (subjects.length > 0) {
       const foundSubject = subjects.find(s => s._id === id);
@@ -27,19 +40,23 @@ export default function SubjectDetailScreen() {
     }
   }, [id, subjects]);
 
+  // Initial load on mount
   useEffect(() => {
     loadTasks();
   }, []);
 
   useEffect(() => {
     if (tasks.length > 0 && subject) {
+      console.log(`Filtering ${tasks.length} tasks for subject: ${subject._id}`);
       const filteredTasks = tasks.filter(task => task.subjectId === subject._id);
+      console.log(`Found ${filteredTasks.length} tasks for this subject`);
       setSubjectTasks(filteredTasks);
     }
   }, [tasks, subject]);
 
   const loadTasks = async () => {
     try {
+      console.log('Loading tasks...');
       await fetchTasks();
     } catch (err) {
       console.error('Error loading tasks:', err);
@@ -63,7 +80,7 @@ export default function SubjectDetailScreen() {
   const handleDeleteSubject = async () => {
     Alert.alert(
       "Delete Subject",
-      `Are you sure you want to delete "${subject.name}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${subject.name}"?\n\nThis will also remove all tasks associated with this subject. This action cannot be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -72,7 +89,8 @@ export default function SubjectDetailScreen() {
           onPress: async () => {
             try {
               await deleteSubject(subject._id);
-              router.back();
+              Alert.alert("Success", "Subject deleted successfully");
+              router.replace('/');
             } catch (err) {
               console.error('Error deleting subject:', err);
               Alert.alert('Error', 'Failed to delete subject. Please try again.');
@@ -88,6 +106,10 @@ export default function SubjectDetailScreen() {
       pathname: '/new-task',
       params: { subjectId: subject._id }
     });
+  };
+
+  const handleGoHome = () => {
+    router.replace('/');
   };
 
   if (subjectLoading || !subject) {
@@ -108,7 +130,7 @@ export default function SubjectDetailScreen() {
               <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
                 <Ionicons name="arrow-back" size={22} color="#007AFF" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => router.replace('/')} style={styles.headerButton}>
+              <TouchableOpacity onPress={handleGoHome} style={styles.headerButton}>
                 <Ionicons name="home" size={22} color="#007AFF" />
               </TouchableOpacity>
             </View>
@@ -125,6 +147,16 @@ export default function SubjectDetailScreen() {
           ),
         }}
       />
+
+      <View style={styles.backButtonContainer}>
+        <TouchableOpacity
+          style={styles.floatingBackButton}
+          onPress={handleGoHome}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Text style={styles.backButtonText}>Home</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={[styles.subjectHeader, { backgroundColor: subject.color + '20' }]}>
         <View style={[styles.colorIndicator, { backgroundColor: subject.color }]} />
@@ -181,6 +213,17 @@ export default function SubjectDetailScreen() {
             refreshing={refreshing}
           />
         )}
+      </View>
+
+      {/* Delete Subject Button */}
+      <View style={styles.deleteButtonContainer}>
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={handleDeleteSubject}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+          <Text style={styles.deleteButtonText}>Delete Subject</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -303,5 +346,53 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  backButtonContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    zIndex: 100,
+  },
+  floatingBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  deleteButtonContainer: {
+    padding: 20,
+    paddingTop: 0,
+    paddingBottom: 100,
+    backgroundColor: '#F2F2F7',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    padding: 16,
+    marginVertical: 8,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 8,
   },
 }); 

@@ -1,13 +1,10 @@
 import { useEffect } from 'react';
 import { Redirect } from 'expo-router';
 import { useAuthStore } from '../store/auth';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 export default function Index() {
   const { user, isLoading } = useAuthStore();
 
-  // Show loading indicator while checking authentication state
-  if (isLoading) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#007AFF" />

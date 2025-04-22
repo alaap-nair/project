@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -145,18 +145,49 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
   const webViewRef = useRef<WebView | null>(null);
   
   const { addNote, updateNote, loading, error } = useNotesStore();
-  const { user } = useAuthStore();
+  const { user, isAuthReady } = useAuthStore();
 
-  // Add error handling for authentication
-  useEffect(() => {
-    if (!user) {
-      Alert.alert(
-        'Authentication Required',
-        'You must be logged in to create or edit notes.',
-        [{ text: 'OK', onPress: onClose }]
-      );
+  // Memoize the auth check to prevent unnecessary re-renders
+  const checkAuth = useCallback(() => {
+    if (!isAuthReady) {
+      return { isValid: false, message: 'Loading authentication status...' };
     }
-  }, [user]);
+    if (!user) {
+      return { isValid: false, message: 'Please log in to continue.' };
+    }
+    return { isValid: true };
+  }, [user, isAuthReady]);
+
+  // Monitor auth state changes
+  useEffect(() => {
+    const authStatus = checkAuth();
+    console.log('RichTextEditor auth state:', { 
+      user: user?.uid, 
+      isAuthReady,
+      isValid: authStatus.isValid,
+      timestamp: new Date().toISOString()
+    });
+
+    // If auth becomes invalid while editing, save draft and notify user
+    if (!authStatus.isValid && content.trim()) {
+      const draftKey = `note_draft_${Date.now()}`;
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({ title, content }));
+        Alert.alert(
+          'Authentication Required',
+          'Your draft has been saved. Please log in again to continue editing.',
+          [{ text: 'OK', onPress: onClose }]
+        );
+      } catch (error) {
+        console.error('Error saving draft:', error);
+        Alert.alert(
+          'Authentication Required',
+          'Please log in again to continue editing.',
+          [{ text: 'OK', onPress: onClose }]
+        );
+      }
+    }
+  }, [user, isAuthReady, content, title]);
 
   // Handle messages from the WebView
   const handleMessage = (event: any) => {
@@ -184,12 +215,13 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
 
   // Function to handle file picking
   const handleFilePick = async () => {
-    try {
-      if (!user) {
-        Alert.alert('Authentication Required', 'Please log in to add files to notes.');
-        return;
-      }
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
+      return;
+    }
 
+    try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
         copyToCacheDirectory: true,
@@ -198,13 +230,8 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
       if (result.type === 'success') {
         setIsSaving(true);
         try {
-          // Generate a unique path in storage including the user ID for proper isolation
           const storagePath = `users/${user.uid}/files/${Date.now()}_${result.name}`;
-          
-          // Upload the file to Firebase Storage
           const fileUrl = await uploadFileToStorage(result.uri, storagePath);
-          
-          // Insert the file link in the editor
           if (fileUrl) {
             insertFileLink(fileUrl, result.name);
           }
@@ -223,15 +250,15 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
 
   // Function to handle starting audio recording
   const startRecording = async () => {
-    try {
-      if (!user) {
-        Alert.alert('Authentication Required', 'Please log in to record audio.');
-        return;
-      }
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
+      return;
+    }
 
+    try {
       console.log('Requesting permissions...');
       await Audio.requestPermissionsAsync();
-      
       await configureAudioSession();
       
       console.log('Starting recording...');
@@ -296,107 +323,83 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
       return;
     }
 
-    if (!user) {
-      Alert.alert('Authentication Required', 'Please log in to save notes.');
+    const authStatus = checkAuth();
+    if (!authStatus.isValid) {
+      Alert.alert('Authentication Required', authStatus.message);
       return;
     }
 
     setIsSaving(true);
-    
     try {
-      let noteId;
-      
+      const noteData = {
+        title: title.trim(),
+        content,
+        userId: user.uid,
+        linkedTaskId: linkToTaskId,
+      };
+
       if (initialNote?._id) {
-        // Update existing note
-        await updateNote(initialNote._id, {
-          title: title.trim(),
-          content: content.trim() || ' ', // Ensure content is never empty
-        });
-        noteId = initialNote._id;
-        console.log('Note updated successfully');
+        await updateNote(initialNote._id, noteData);
       } else {
-        // Create new note with taskIds if linking to a task
-        const taskIds = linkToTaskId && typeof linkToTaskId === 'string' ? [linkToTaskId] : [];
-        
-        // Sanitize content to ensure it's never null or undefined
-        const sanitizedContent = content.trim() || ' ';
-        
-        // Create the note data object with all required fields
-        const noteData = {
-          title: title.trim(),
-          content: sanitizedContent,
-          taskIds: taskIds,
-          // Only include audioUrl if we have a recording
-          ...(recording && recording.getURI ? { audioUrl: null } : {})
-        };
-        
-        console.log('Creating note with:', {
-          title: noteData.title,
-          content: sanitizedContent.substring(0, 50) + '...',
-          taskIds: JSON.stringify(taskIds),
-          hasAudioField: noteData.hasOwnProperty('audioUrl')
-        });
-        
-        try {
-          const newNote = await addNote(noteData);
-          
-          if (newNote && newNote._id) {
-            noteId = newNote._id;
-            console.log('Note created successfully with ID:', noteId);
-            
-            // Upload the recording if exists
-            if (recording && recording.getURI && noteId) {
-              try {
-                const uri = recording.getURI();
-                if (uri) {
-                  console.log('Uploading recording from URI:', uri);
-                  // Use the dedicated function to add audio to the note after creation
-                  // This separates the concerns and allows for proper handling of the audio file
-                  const { addAudioToNote } = useNotesStore.getState();
-                  
-                  // Handle the audio upload in a separate step to avoid the initial undefined value
-                  await addAudioToNote(noteId, uri);
-                }
-              } catch (audioError) {
-                console.error('Error adding audio to note:', audioError);
-                // Continue with the note creation even if audio upload fails
-              }
-            }
-            
-            // If we have a task ID to link and the note was created successfully
-            if (linkToTaskId && noteId) {
-              try {
-                const { linkTaskToNote } = useNotesStore.getState();
-                await linkTaskToNote(noteId, linkToTaskId);
-                console.log(`Note linked to task: ${linkToTaskId}`);
-              } catch (linkError) {
-                console.error('Error linking task to note:', linkError);
-                // We don't want to fail the whole operation if just the linking fails
-              }
-            }
-          } else {
-            console.error('Note creation returned invalid response:', newNote);
-            throw new Error('Failed to create note: Invalid response');
-          }
-        } catch (createError) {
-          console.error('Error creating note:', createError);
-          if (createError instanceof Error) {
-            console.error('Error details:', createError.message);
-          }
-          throw createError;
-        }
+        await addNote(noteData);
       }
-      
-      Alert.alert(
-        'Success', 
-        `Note ${initialNote?._id ? 'updated' : 'created'} successfully`,
-        [{ text: 'OK', onPress: onClose }]
-      );
+
+      onClose();
     } catch (error) {
       console.error('Error saving note:', error);
-      Alert.alert('Error', `Failed to ${initialNote?._id ? 'update' : 'create'} note. Please try again.`);
+      Alert.alert('Error', 'Failed to save note. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Cleanup function for WebView and other resources
+  useEffect(() => {
+    return () => {
+      // Clean up WebView
+      if (webViewRef.current) {
+        webViewRef.current.stopLoading();
+        webViewRef.current = null;
+      }
+      
+      // Clean up recording if active
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(console.error);
+      }
+      
+      // Clear any pending operations
+      setIsSaving(false);
+      setIsRecording(false);
+    };
+  }, []);
+
+  // Optimize WebView memory usage
+  const webViewConfig = {
+    source: { html: editorHTML },
+    onMessage: handleMessage,
+    style: styles.webView,
+    javaScriptEnabled: true,
+    domStorageEnabled: true,
+    startInLoadingState: true,
+    renderLoading: () => (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    ),
+    scrollEnabled: false,
+    automaticallyAdjustContentInsets: false,
+    // Add memory optimization props
+    cacheEnabled: false,
+    cacheMode: 'LOAD_NO_CACHE',
+    onShouldStartLoadWithRequest: () => true,
+    onLoadEnd: () => {
+      // Clear any cached data
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(`
+          window.localStorage.clear();
+          window.sessionStorage.clear();
+        `);
+      }
     }
   };
 
@@ -429,7 +432,11 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.scrollContainer}>
+        <ScrollView 
+          style={styles.scrollContainer}
+          removeClippedSubviews={true}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.form}>
             <View style={styles.inputContainer}>
               <TextInput
@@ -445,19 +452,7 @@ const RichTextEditor = ({ onClose, initialNote, linkToTaskId }: RichTextEditorPr
             <View style={styles.webViewContainer}>
               <WebView
                 ref={webViewRef}
-                source={{ html: editorHTML }}
-                onMessage={handleMessage}
-                style={styles.webView}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                startInLoadingState={true}
-                renderLoading={() => (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#007AFF" />
-                  </View>
-                )}
-                scrollEnabled={false}
-                automaticallyAdjustContentInsets={false}
+                {...webViewConfig}
               />
             </View>
             

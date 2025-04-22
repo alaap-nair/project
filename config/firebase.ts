@@ -20,24 +20,26 @@ let auth;
 let db;
 let storage;
 
+// Ensure Firebase is initialized only once
 if (!getApps().length) {
+  console.log('Initializing new Firebase app...');
   app = initializeApp(firebaseConfig);
+  
+  // Initialize auth with React Native persistence
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage)
   });
-  db = getFirestore(app);
-  storage = getStorage(app);
+  
+  console.log('Auth initialized with React Native persistence');
 } else {
+  console.log('Reusing existing Firebase app...');
   app = getApp();
-  try {
-    auth = getAuth(app);
-  } catch (e) {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
-  }
-  db = getFirestore(app);
-  storage = getStorage(app);
+  auth = getAuth(app);
 }
+
+db = getFirestore(app);
+storage = getStorage(app);
+
+console.log('Firebase services initialized successfully');
 
 export { app, auth, db, storage }; 

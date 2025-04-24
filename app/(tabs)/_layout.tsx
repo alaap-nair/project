@@ -35,10 +35,11 @@ const TabLayout = () => {
       }}
     >
       <Tabs.Screen
-        name="tasks"
+        name="index"
         options={{
+          title: 'Tasks',
           tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={24} color={color} />
+            <Ionicons name="checkbox-outline" size={24} color={color} />
           ),
         }}
       />
@@ -69,7 +70,7 @@ const TabLayout = () => {
       />
 
       <Tabs.Screen
-        name="index"
+        name="tasks"
         options={{
           title: 'Notes',
           tabBarIcon: ({ color, size }) => (

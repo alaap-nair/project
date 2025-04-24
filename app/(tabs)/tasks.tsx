@@ -1,145 +1,203 @@
-import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator, ScrollView } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { Link } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
-import { useTasksStore, TaskPriority, TaskCategory } from '../../store/tasks';
-import { TaskCard } from '../../components/TaskCard';
+import React, { useEffect, useState } from "react";
+import { View, FlatList, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Modal, Alert, ScrollView } from "react-native";
+import useNotesStore from "../../store/notes";
+import { useAuthStore } from "../../store/auth";
+import { NoteCard } from "../../components/NoteCard";
+import { Ionicons } from "@expo/vector-icons";
+import RichTextEditor from "../../components/RichTextEditor";
+import { router } from "expo-router";
 
-type Filter = {
-  priority?: TaskPriority;
-  category?: TaskCategory;
-  completed?: boolean;
-};
+export default function NotesScreen() {
+  const { notes, fetchNotes, loading, error, showCreateModal, setShowCreateModal, modalVisible, openNoteEditor, closeNoteEditor } = useNotesStore();
+  const { user, isLoading: authLoading, isAuthReady } = useAuthStore();
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [summary, setSummary] = useState('');
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryModalVisible, setSummaryModalVisible] = useState(false);
 
-type SortBy = 'deadline' | 'priority' | 'category';
-
-export default function TasksScreen() {
-  const { tasks, fetchTasks, toggleTaskCompletion } = useTasksStore();
-  const [filter, setFilter] = useState<Filter>({});
-  const [sortBy, setSortBy] = useState<SortBy>('deadline');
-  const [loading, setLoading] = useState(true);
-
+  // Fetch notes when user is authenticated
   useEffect(() => {
-    const loadTasks = async () => {
-      await fetchTasks();
-      setLoading(false);
-    };
-    loadTasks();
-  }, []);
+    let isMounted = true;
 
-  const filteredTasks = tasks.filter((task) => {
-    if (filter.priority && task.priority !== filter.priority) return false;
-    if (filter.category && task.category !== filter.category) return false;
-    if (filter.completed !== undefined && task.completed !== filter.completed) return false;
-    return true;
-  });
-
-  const sortedTasks = [...filteredTasks].sort((a, b) => {
-    switch (sortBy) {
-      case 'deadline':
-        return new Date(a.deadline || 0).getTime() - new Date(b.deadline || 0).getTime();
-      case 'priority': {
-        const priorityOrder = { high: 0, medium: 1, low: 2 };
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
+    const loadNotes = async () => {
+      if (user && isMounted) {
+        await fetchNotes();
       }
-      case 'category':
-        return a.category.localeCompare(b.category);
-      default:
-        return 0;
-    }
-  });
+    };
 
-  const FilterButton = ({ label, isActive, onPress }) => (
-    <Pressable
-      style={[styles.filterButton, isActive && styles.filterButtonActive]}
-      onPress={onPress}
-    >
-      <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+    loadNotes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  // Only redirect to login if not in a modal and no user
+  useEffect(() => {
+    if (isAuthReady && !user && !modalVisible && !summaryModalVisible) {
+      router.replace('/auth/login');
+    }
+  }, [isAuthReady, user, modalVisible, summaryModalVisible]);
+
+  // Listen for changes to showCreateModal and update the local modalVisible state
+  useEffect(() => {
+    if (showCreateModal) {
+      openNoteEditor();
+      setShowCreateModal(false);
+    }
+  }, [showCreateModal]);
+
+  // Don't render anything until auth check is complete
+  if (authLoading || !isAuthReady) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  // If no user is found after auth check, don't render the screen
+  if (!user) {
+    return null;
+  }
+
+  const handleLocalOpenNoteEditor = () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to create notes.');
+      return;
+    }
+    
+    openNoteEditor();
+  };
+
+  const handleCloseModal = () => {
+    closeNoteEditor();
+  };
+
+  const handleNotePress = (note) => {
+    setSelectedNote(note);
+    setSummary('');
+    setSummaryModalVisible(true);
+  };
+
+  const handleCloseSummaryModal = () => {
+    setSummaryModalVisible(false);
+    setSelectedNote(null);
+    setSummary('');
+  };
+
+  const handleSummarize = async () => {
+    if (!selectedNote) return;
+    setSummarizing(true);
+    setSummary('');
+    try {
+      const response = await fetch('http://localhost:3001/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: selectedNote.content }),
+      });
+      const data = await response.json();
+      if (data.summary) {
+        setSummary(data.summary);
+      } else {
+        setSummary('Failed to generate summary.');
+      }
+    } catch (err) {
+      setSummary('Error connecting to summarization service.');
+    }
+    setSummarizing(false);
+  };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centeredContainer}>
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={() => user && fetchNotes()}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <FilterButton
-            label="All"
-            isActive={Object.keys(filter).length === 0}
-            onPress={() => setFilter({})}
-          />
-          <FilterButton
-            label="Active"
-            isActive={filter.completed === false}
-            onPress={() => setFilter({ ...filter, completed: false })}
-          />
-          <FilterButton
-            label="Completed"
-            isActive={filter.completed === true}
-            onPress={() => setFilter({ ...filter, completed: true })}
-          />
-          <View style={styles.divider} />
-          <FilterButton
-            label="High Priority"
-            isActive={filter.priority === 'high'}
-            onPress={() => setFilter({ ...filter, priority: 'high' })}
-          />
-          <FilterButton
-            label="Medium Priority"
-            isActive={filter.priority === 'medium'}
-            onPress={() => setFilter({ ...filter, priority: 'medium' })}
-          />
-          <FilterButton
-            label="Low Priority"
-            isActive={filter.priority === 'low'}
-            onPress={() => setFilter({ ...filter, priority: 'low' })}
-          />
-        </ScrollView>
-      </View>
+      <Text style={styles.header}>My Notes</Text>
 
-      <View style={styles.sortContainer}>
-        <Text style={styles.sortLabel}>Sort by:</Text>
-        <Pressable
-          style={[styles.sortButton, sortBy === 'deadline' && styles.sortButtonActive]}
-          onPress={() => setSortBy('deadline')}
-        >
-          <Text style={styles.sortButtonText}>Due Date</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.sortButton, sortBy === 'priority' && styles.sortButtonActive]}
-          onPress={() => setSortBy('priority')}
-        >
-          <Text style={styles.sortButtonText}>Priority</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.sortButton, sortBy === 'category' && styles.sortButtonActive]}
-          onPress={() => setSortBy('category')}
-        >
-          <Text style={styles.sortButtonText}>Category</Text>
-        </Pressable>
-      </View>
+      {notes.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyMessage}>No notes available</Text>
+          <TouchableOpacity 
+            style={styles.createButton}
+            onPress={handleLocalOpenNoteEditor}
+          >
+            <Text style={styles.createButtonText}>Create Your First Note</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={notes}
+          keyExtractor={(item) => item._id}
+          renderItem={({ item }) => (
+            <TouchableOpacity onPress={() => handleNotePress(item)}>
+              <NoteCard note={item} />
+            </TouchableOpacity>
+          )}
+        />
+      )}
 
-      <FlashList
-        data={sortedTasks}
-        renderItem={({ item }) => (
-          <TaskCard
-            task={item}
-            onToggleComplete={toggleTaskCompletion}
-          />
-        )}
-        estimatedItemSize={120}
-        contentContainerStyle={styles.list}
-      />
+      {/* Note Detail & Summarization Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={summaryModalVisible}
+        onRequestClose={handleCloseSummaryModal}
+      >
+        <View style={[styles.centeredContainer, { backgroundColor: 'rgba(0,0,0,0.2)' }]}> 
+          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, width: '90%', maxHeight: '80%' }}>
+            <ScrollView>
+              <Text style={{ fontWeight: 'bold', fontSize: 20, marginBottom: 8 }}>Note</Text>
+              <Text style={{ marginBottom: 16 }}>{selectedNote?.content}</Text>
+              <TouchableOpacity
+                style={[styles.createButton, { marginBottom: 16, backgroundColor: '#6949FF' }]}
+                onPress={handleSummarize}
+                disabled={summarizing}
+              >
+                <Text style={styles.createButtonText}>{summarizing ? 'Summarizing...' : 'Summarize with AI'}</Text>
+              </TouchableOpacity>
+              {summary ? (
+                <View style={{ backgroundColor: '#F3F3F3', borderRadius: 8, padding: 12 }}>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Summary:</Text>
+                  <Text>{summary}</Text>
+                </View>
+              ) : null}
+              <TouchableOpacity onPress={handleCloseSummaryModal} style={{ marginTop: 20, alignSelf: 'center' }}>
+                <Text style={{ color: '#007AFF', fontWeight: 'bold' }}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Note Creation Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={handleCloseModal}
+      >
+        <RichTextEditor onClose={handleCloseModal} />
+      </Modal>
     </View>
   );
 }
@@ -150,70 +208,51 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingTop: 60,
   },
-  loadingContainer: {
+  centeredContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  filterContainer: {
+  header: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    backgroundColor: '#fff',
   },
-  filterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    backgroundColor: '#F2F2F7',
-  },
-  filterButtonActive: {
-    backgroundColor: '#007AFF',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    color: '#3C3C43',
-  },
-  filterButtonTextActive: {
-    color: '#fff',
-  },
-  divider: {
-    width: 1,
-    height: '100%',
-    backgroundColor: '#E5E5EA',
-    marginHorizontal: 8,
-  },
-  sortContainer: {
-    flexDirection: 'row',
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
   },
-  sortLabel: {
-    fontSize: 14,
-    color: '#3C3C43',
-    marginRight: 12,
+  emptyMessage: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
   },
-  sortButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    backgroundColor: '#F2F2F7',
-  },
-  sortButtonActive: {
+  createButton: {
     backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
-  sortButtonText: {
-    fontSize: 14,
-    color: '#3C3C43',
+  createButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  list: {
-    padding: 16,
+  errorText: {
+    color: '#FF3B30',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

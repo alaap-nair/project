@@ -39,11 +39,10 @@ export default function NotesScreen() {
     }
   }, [isAuthReady, user, modalVisible, summaryModalVisible]);
 
-  // Listen for changes to showCreateModal and update the local modalVisible state
+  // Handle showCreateModal changes
   useEffect(() => {
-    if (showCreateModal) {
+    if (showCreateModal && !modalVisible) {
       openNoteEditor();
-      setShowCreateModal(false);
     }
   }, [showCreateModal]);
 

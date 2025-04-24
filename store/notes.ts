@@ -43,9 +43,9 @@ const useNotesStore = create<NotesStore>((set) => ({
   error: null,
   showCreateModal: false,
   modalVisible: false,
-  setShowCreateModal: (show) => set({ showCreateModal: show }),
-  openNoteEditor: () => set({ modalVisible: true }),
-  closeNoteEditor: () => set({ modalVisible: false }),
+  setShowCreateModal: (show) => set({ showCreateModal: show, modalVisible: show }),
+  openNoteEditor: () => set({ modalVisible: true, showCreateModal: true }),
+  closeNoteEditor: () => set({ modalVisible: false, showCreateModal: false }),
 
   fetchNotes: async () => {
     set({ loading: true, error: null });

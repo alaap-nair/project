@@ -2,12 +2,32 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import useNotesStore from '../../store/notes';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '../../store/auth';
+import { useEffect, useState } from 'react';
+import { router } from 'expo-router';
 
 const TabLayout = () => {
   const { setShowCreateModal } = useNotesStore();
-  // const insets = useSafeAreaInsets();
-  // const reducedInset = Math.max(insets.bottom - 8, 0);
+  const { user, isAuthReady } = useAuthStore();
+  const [activeTab, setActiveTab] = useState('index');
+
+  useEffect(() => {
+    if (isAuthReady && !user) {
+      router.replace('/(auth)/login');
+    }
+  }, [isAuthReady, user]);
+
+  if (!user) return null;
+
+  const handleAddPress = () => {
+    if (activeTab === 'tasks') {
+      // Create note
+      setShowCreateModal(true);
+    } else {
+      // Create task
+      router.push('/new-task');
+    }
+  };
 
   return (
     <Tabs
@@ -32,6 +52,11 @@ const TabLayout = () => {
           paddingVertical: 0,
         },
         headerShown: false,
+      }}
+      screenListeners={{
+        tabPress: (e) => {
+          setActiveTab(e.target.split('-')[0]); // Update active tab
+        }
       }}
     >
       <Tabs.Screen
@@ -60,7 +85,7 @@ const TabLayout = () => {
             <View style={styles.addButtonContainer}>
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={() => setShowCreateModal(true)}
+                onPress={handleAddPress}
               >
                 <Ionicons name="add" size={32} color="#FFFFFF" />
               </TouchableOpacity>

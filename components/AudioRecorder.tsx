@@ -60,23 +60,68 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
     try {
       setError(null);
       setDuration(0);
-      console.log('Requesting permissions..');
-      await Audio.requestPermissionsAsync();
       
-      // Use the configureAudioSession utility
-      await configureAudioSession();
+      // Reset any existing recording
+      if (recording) {
+        await recording.stopAndUnloadAsync();
+        setRecording(null);
+      }
+      
+      console.log('Requesting permissions..');
+      const permissionResponse = await Audio.requestPermissionsAsync();
+      
+      if (!permissionResponse.granted) {
+        throw new Error('Audio recording permission not granted');
+      }
+      
+      // Ensure audio session is properly configured
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
       
       console.log('Starting recording..');
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      setRecording(recording);
-      setIsRecording(true);
-      setRecordingStatus('recording');
-      console.log('Recording started');
+      const newRecording = new Audio.Recording();
+      
+      try {
+        await newRecording.prepareToRecordAsync({
+          android: {
+            extension: '.m4a',
+            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+          },
+          ios: {
+            extension: '.m4a',
+            outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
+            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+        });
+        
+        await newRecording.startAsync();
+        setRecording(newRecording);
+        setIsRecording(true);
+        setRecordingStatus('recording');
+        console.log('Recording started successfully');
+      } catch (err) {
+        console.error('Error during recording setup:', err);
+        throw new Error('Failed to initialize recording. Please try again.');
+      }
     } catch (err) {
       console.error('Failed to start recording:', err);
-      setError('Failed to start recording. Please check permissions and try again.');
+      setError(err instanceof Error ? err.message : 'Failed to start recording. Please check permissions and try again.');
+      setRecordingStatus('idle');
     }
   };
 

@@ -29,6 +29,7 @@ export function TranscriptionManager({
   const [showRecorder, setShowRecorder] = useState(true);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [lastRecordingUri, setLastRecordingUri] = useState<string | null>(null);
 
   // Clean up sound when component unmounts
   useEffect(() => {
@@ -43,21 +44,24 @@ export function TranscriptionManager({
     try {
       console.log('Recording completed, URI:', uri);
       await addAudioToNote(noteId, uri);
-      setShowRecorder(true);
+      setLastRecordingUri(uri); // Save the URI for transcription
     } catch (err) {
       console.error('Error handling recording:', err);
       setError('Failed to save recording. Please try again.');
     }
   };
 
-  const handleTranscribe = async (uri: string) => {
+  const handleTranscribe = async () => {
+    if (!lastRecordingUri || isTranscribing) return;
+
     try {
+      setIsTranscribing(true);
       setError(null);
       
       // Create FormData for the audio file
       const formData = new FormData();
       formData.append('audio', {
-        uri,
+        uri: lastRecordingUri,
         type: 'audio/wav',
         name: 'recording.wav'
       });
@@ -80,10 +84,13 @@ export function TranscriptionManager({
       if (result.text) {
         await addTranscriptToNote(noteId, result.text);
         onTranscriptionComplete(result.text);
+        setLastRecordingUri(null); // Reset after successful transcription
       }
     } catch (err) {
       console.error('Transcription error:', err);
       setError('Failed to transcribe audio. Please try again.');
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
@@ -150,6 +157,29 @@ export function TranscriptionManager({
       {showRecorder && (
         <AudioRecorder onRecordingComplete={handleRecordingComplete} />
       )}
+      
+      {lastRecordingUri && (
+        <View style={styles.transcribeContainer}>
+          <TouchableOpacity 
+            style={[styles.transcribeButton, isTranscribing && styles.transcribeButtonDisabled]}
+            onPress={handleTranscribe}
+            disabled={isTranscribing}
+          >
+            <Ionicons 
+              name="document-text" 
+              size={20} 
+              color={isTranscribing ? '#C7C7CC' : '#007AFF'} 
+            />
+            <Text style={[styles.transcribeText, isTranscribing && styles.transcribeTextDisabled]}>
+              {isTranscribing ? 'Transcribing...' : 'Transcribe Recording'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      {error && (
+        <Text style={styles.errorText}>{error}</Text>
+      )}
     </View>
   );
 }
@@ -189,38 +219,33 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     marginTop: 2,
   },
+  transcribeContainer: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
   transcribeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E5E5EA',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  transcribeButtonDisabled: {
+    opacity: 0.6,
   },
   transcribeText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#007AFF',
-    marginLeft: 4,
+    marginLeft: 8,
+    fontWeight: '500',
   },
-  newRecordingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E5E5EA',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  newRecordingText: {
-    fontSize: 14,
-    color: '#007AFF',
-    marginLeft: 4,
-  },
-  disabledText: {
+  transcribeTextDisabled: {
     color: '#C7C7CC',
   },
   errorText: {
     marginTop: 10,
     color: 'red',
+    textAlign: 'center',
   },
 }); 

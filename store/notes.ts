@@ -454,17 +454,23 @@ const useNotesStore = create<NotesStore>((set) => ({
       if (note.userId !== currentUser.uid) {
         throw new Error('You do not have permission to modify this note');
       }
+
+      // Get the latest recording (the one we want to add the transcript to)
+      const recordings = [...(note.audioRecordings || [])];
+      if (recordings.length === 0) {
+        throw new Error('No recordings found to add transcript to');
+      }
+
+      // Update the latest recording with the transcript
+      const lastIndex = recordings.length - 1;
+      recordings[lastIndex] = {
+        ...recordings[lastIndex],
+        transcript
+      };
       
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
-        audioRecordings: [
-          ...(note.audioRecordings || []),
-          {
-            url: note.audioRecordings[0]?.url || '',
-            transcript,
-            createdAt: new Date().toISOString()
-          }
-        ],
+        audioRecordings: recordings,
         updatedAt: serverTimestamp()
       });
       
@@ -472,14 +478,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: state.notes.map((note) =>
           note._id === noteId ? { 
             ...note, 
-            audioRecordings: [
-              ...(note.audioRecordings || []),
-              {
-                url: note.audioRecordings[0]?.url || '',
-                transcript,
-                createdAt: new Date().toISOString()
-              }
-            ],
+            audioRecordings: recordings,
             updatedAt: new Date().toISOString() 
           } : note
         ),

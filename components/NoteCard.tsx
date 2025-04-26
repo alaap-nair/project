@@ -1,6 +1,6 @@
-import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, TouchableOpacity, GestureResponderEvent } from 'react-native';
 import { format } from 'date-fns';
-import { Link } from 'expo-router';
+import { Link, Href } from 'expo-router';
 import type { Note, AudioRecording } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
 import useNotesStore from '../store/notes';
@@ -15,6 +15,94 @@ interface NoteCardProps {
   note: Note;
 }
 
+interface AudioRecordingItemProps {
+  recording: AudioRecording;
+  noteId: string;
+  onTranscriptionComplete: (transcript: string) => void;
+}
+
+function AudioRecordingItem({ recording, noteId, onTranscriptionComplete }: AudioRecordingItemProps) {
+  const { addTranscriptToNote } = useNotesStore();
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleTranscribe = async () => {
+    if (isTranscribing) return;
+
+    try {
+      setIsTranscribing(true);
+      setError(null);
+      
+      // Create FormData for the audio file
+      const formData = new FormData();
+      // @ts-ignore - React Native's FormData accepts additional properties
+      formData.append('audio', {
+        uri: recording.url,
+        type: 'audio/wav',
+        name: 'recording.wav'
+      });
+
+      // Send the audio file to your transcription endpoint
+      const response = await fetch('http://localhost:3000/api/transcribe', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to transcribe audio');
+      }
+
+      const result = await response.json();
+      
+      if (result.text) {
+        await addTranscriptToNote(noteId, result.text);
+        onTranscriptionComplete(result.text);
+      }
+    } catch (err) {
+      console.error('Transcription error:', err);
+      setError('Failed to transcribe audio. Please try again.');
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  return (
+    <View style={styles.recordingItem}>
+      <AudioPlayer audioUri={recording.url} />
+      <View style={styles.recordingActions}>
+        <TouchableOpacity 
+          style={[styles.transcribeButton, isTranscribing && styles.transcribeButtonDisabled]}
+          onPress={handleTranscribe}
+          disabled={isTranscribing}
+        >
+          <Ionicons 
+            name="document-text" 
+            size={20} 
+            color={isTranscribing ? '#C7C7CC' : '#007AFF'} 
+          />
+          <Text style={[styles.transcribeText, isTranscribing && styles.transcribeTextDisabled]}>
+            {isTranscribing ? 'Transcribing...' : 'Transcribe'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {recording.transcript && (
+        <View style={styles.transcriptContainer}>
+          <Text style={styles.transcriptTitle}>Transcript</Text>
+          <Text style={styles.transcriptText} numberOfLines={3}>
+            {recording.transcript}
+          </Text>
+        </View>
+      )}
+      {error && (
+        <Text style={styles.errorText}>{error}</Text>
+      )}
+    </View>
+  );
+}
+
 export function NoteCard({ note }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
   const { deleteNote } = useNotesStore();
@@ -26,11 +114,10 @@ export function NoteCard({ note }: NoteCardProps) {
   const hasPermission = user && note.userId === user.uid;
 
   const handleTranscriptionComplete = (transcript: string) => {
-    // This is now handled directly in the TranscriptionManager component
     console.log('Transcription complete:', transcript);
   };
 
-  const handleDeleteNote = (e) => {
+  const handleDeleteNote = (e: GestureResponderEvent) => {
     e.stopPropagation();
     
     if (!hasPermission) {
@@ -60,7 +147,7 @@ export function NoteCard({ note }: NoteCardProps) {
   };
 
   return (
-    <Link href={`/note/${note._id}`} asChild>
+    <Link href={`/note/${note._id}` as unknown as Href} asChild>
       <Pressable style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title} numberOfLines={1}>
@@ -97,17 +184,12 @@ export function NoteCard({ note }: NoteCardProps) {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recordingsScroll}>
               {note.audioRecordings.map((recording, index) => (
-                <View key={index} style={styles.recordingItem}>
-                  <AudioPlayer audioUri={recording.url} />
-                  {recording.transcript && (
-                    <View style={styles.transcriptContainer}>
-                      <Text style={styles.transcriptTitle}>Transcript</Text>
-                      <Text style={styles.transcriptText} numberOfLines={3}>
-                        {recording.transcript}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                <AudioRecordingItem
+                  key={index}
+                  recording={recording}
+                  noteId={note._id}
+                  onTranscriptionComplete={handleTranscriptionComplete}
+                />
               ))}
             </ScrollView>
           </View>
@@ -205,8 +287,33 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: '#F2F2F7',
     borderRadius: 8,
-    padding: 8,
+    padding: 12,
     width: 280,
+  },
+  recordingActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  transcribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E5E5EA',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  transcribeButtonDisabled: {
+    opacity: 0.6,
+  },
+  transcribeText: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  transcribeTextDisabled: {
+    color: '#C7C7CC',
   },
   transcriptContainer: {
     marginTop: 8,
@@ -224,5 +331,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#3C3C43',
     lineHeight: 16,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#FF3B30',
+    textAlign: 'center',
   },
 });

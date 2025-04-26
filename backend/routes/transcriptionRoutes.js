@@ -8,18 +8,66 @@ const { spawn } = require('child_process');
 // Configure multer for handling file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '..', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
-    cb(null, uploadDir);
+    console.log('Upload directory:', uploadsDir);
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + path.extname(file.originalname));
+    // Generate unique filename with timestamp and correct extension
+    const filename = `${Date.now()}-recording.m4a`;
+    console.log('Generated filename:', filename);
+    console.log('Original file details:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      buffer: file.buffer ? 'Present' : 'Not present'
+    });
+    cb(null, filename);
   }
 });
 
-const upload = multer({ storage: storage });
+// Configure multer
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
+  },
+  fileFilter: (req, file, cb) => {
+    console.log('Received file in filter:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      buffer: file.buffer ? 'Present' : 'Not present'
+    });
+    
+    // Accept common audio formats
+    const validMimeTypes = [
+      'audio/mp4',
+      'audio/x-m4a',
+      'audio/m4a',
+      'audio/aac',
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/vnd.wave',
+      'audio/wav',
+      'audio/wave',
+      'audio/x-wav',
+      'application/octet-stream'  // For raw data from mobile
+    ];
+
+    if (validMimeTypes.includes(file.mimetype)) {
+      console.log('File type accepted:', file.mimetype);
+      cb(null, true);
+    } else {
+      console.log('Rejected file type:', file.mimetype);
+      cb(new Error(`Invalid file type: ${file.mimetype}. Supported types: ${validMimeTypes.join(', ')}`));
+    }
+  }
+}).single('audio');
 
 // Mock transcription responses
 const mockTranscriptions = [
@@ -30,65 +78,129 @@ const mockTranscriptions = [
   "Make sure to review the chapter on database normalization before the exam."
 ];
 
-router.post('/transcribe', upload.single('audio'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No audio file provided' });
-    }
+router.post('/transcribe', (req, res) => {
+  upload(req, res, async (err) => {
+    try {
+      // Handle multer errors
+      if (err instanceof multer.MulterError) {
+        console.error('Multer error:', err);
+        return res.status(400).json({ 
+          error: 'File upload error',
+          details: err.message
+        });
+      } else if (err) {
+        console.error('Upload error:', err);
+        return res.status(400).json({ 
+          error: err.message || 'File upload failed'
+        });
+      }
 
-    console.log('Processing audio file:', req.file.path);
+      // Check if file was provided
+      if (!req.file) {
+        return res.status(400).json({ error: 'No audio file provided' });
+      }
 
-    // Spawn Python process to handle transcription
-    const pythonProcess = spawn('/Library/Frameworks/Python.framework/Versions/3.9/bin/python3', [
-      path.join(__dirname, '..', 'transcribe.py'),
-      req.file.path
-    ]);
+      // Validate file size
+      if (!req.file.size) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: 'Audio file is empty' });
+      }
 
-    let transcriptionData = '';
-    let errorData = '';
+      console.log('File received:', {
+        filename: req.file.filename,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      });
 
-    pythonProcess.stdout.on('data', (data) => {
-      transcriptionData += data.toString();
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
-
-    await new Promise((resolve, reject) => {
-      pythonProcess.on('close', (code) => {
-        // Clean up the uploaded file
-        if (fs.existsSync(req.file.path)) {
-          fs.unlinkSync(req.file.path);
+      const audioPath = req.file.path;
+      
+      // Verify the file exists and is readable
+      try {
+        await fs.promises.access(audioPath, fs.constants.R_OK);
+        const stats = await fs.promises.stat(audioPath);
+        if (!stats.size) {
+          throw new Error('Audio file is empty');
         }
+        console.log('Audio file stats:', {
+          size: stats.size,
+          path: audioPath
+        });
+      } catch (error) {
+        console.error('File validation error:', error);
+        return res.status(400).json({ error: 'Invalid or unreadable audio file' });
+      }
+      
+      // Run the Python transcription script
+      const pythonProcess = spawn('python3', [
+        path.join(__dirname, '..', 'transcribe.py'),
+        audioPath
+      ]);
 
-        if (code === 0 && transcriptionData) {
+      let transcriptionData = '';
+      let errorData = '';
+
+      pythonProcess.stdout.on('data', (data) => {
+        transcriptionData += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        errorData += data.toString();
+        console.error('Python error:', data.toString());
+      });
+
+      await new Promise((resolve, reject) => {
+        pythonProcess.on('close', (code) => {
+          // Clean up the uploaded file
+          fs.unlink(audioPath, (err) => {
+            if (err) console.error('Error deleting audio file:', err);
+          });
+
+          if (code !== 0) {
+            console.error('Transcription process error:', errorData);
+            reject(new Error(`Transcription process failed with code ${code}: ${errorData}`));
+            return;
+          }
+
           try {
             const result = JSON.parse(transcriptionData);
-            res.json(result);
-          } catch (parseError) {
-            reject(new Error('Failed to parse transcription result'));
+            if (result.error) {
+              reject(new Error(result.error));
+            } else {
+              resolve(result);
+            }
+          } catch (err) {
+            console.error('Error parsing transcription result:', err);
+            reject(new Error('Invalid transcription result'));
           }
-        } else {
-          reject(new Error(errorData || 'Transcription failed'));
-        }
-        resolve();
-      });
-    });
+        });
 
-  } catch (error) {
-    console.error('Route error:', error);
-    
-    // Clean up the uploaded file if it exists
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+        // Handle process errors
+        pythonProcess.on('error', (err) => {
+          console.error('Failed to start Python process:', err);
+          reject(new Error('Failed to start transcription process'));
+        });
+      })
+      .then(result => {
+        res.json({ text: result.transcript });
+      })
+      .catch(error => {
+        throw error;
+      });
+
+    } catch (error) {
+      console.error('Transcription error:', error);
+      // Clean up the uploaded file if it exists
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error('Error deleting audio file:', err);
+        });
+      }
+      res.status(500).json({ 
+        error: error.message || 'Failed to transcribe audio',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
-    
-    res.status(500).json({ 
-      error: 'Failed to transcribe audio', 
-      details: error.message 
-    });
-  }
+  });
 });
 
 module.exports = router; 

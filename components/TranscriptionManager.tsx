@@ -10,6 +10,14 @@ import { apiClient } from '../config';
 import { uploadAudioToStorage, configureAudioPlaybackSession } from '../utils/audioUtils';
 import * as FileSystem from 'expo-file-system';
 
+// Get the server URL based on platform
+const SERVER_URL = Platform.select({
+  web: 'http://localhost:8003',
+  ios: 'http://10.40.13.29:8003', // Use your machine's IP address
+  android: 'http://10.40.13.29:8003', // Use your machine's IP address
+  default: 'http://localhost:8003'
+});
+
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
   noteId: string;
@@ -58,37 +66,118 @@ export function TranscriptionManager({
       setIsTranscribing(true);
       setError(null);
       
-      // Create FormData for the audio file
-      const formData = new FormData();
-      formData.append('audio', {
-        uri: lastRecordingUri,
-        type: 'audio/wav',
-        name: 'recording.wav'
-      });
+      console.log('Starting transcription for URI:', lastRecordingUri);
+      
+      // For mobile platforms, we need to read the file first
+      let audioBlob;
+      if (Platform.OS !== 'web') {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(lastRecordingUri);
+          console.log('File info:', fileInfo);
+          
+          if (!fileInfo.exists) {
+            throw new Error('Audio file not found');
+          }
 
+          if (!fileInfo.size || fileInfo.size === 0) {
+            throw new Error('Audio file is empty');
+          }
+
+          console.log('Reading audio file:', lastRecordingUri);
+          
+          // Read the file directly as binary
+          const audioData = await FileSystem.readAsStringAsync(lastRecordingUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          if (!audioData) {
+            throw new Error('Failed to read audio data');
+          }
+
+          console.log('Audio data length:', audioData.length);
+
+          // Convert base64 to blob
+          const byteCharacters = atob(audioData);
+          const byteArrays = [];
+          
+          for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+            const slice = byteCharacters.slice(offset, offset + 512);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+              byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+          }
+
+          audioBlob = new Blob(byteArrays, { type: 'audio/m4a' });
+          console.log('Created audio blob:', {
+            size: audioBlob.size,
+            type: audioBlob.type
+          });
+
+          if (!audioBlob.size) {
+            throw new Error('Created audio blob is empty');
+          }
+        } catch (err) {
+          console.error('Error reading audio file:', err);
+          throw new Error(`Failed to read audio file: ${err.message}`);
+        }
+      } else {
+        // For web, we can fetch the blob directly
+        try {
+          console.log('Fetching audio blob from URI...');
+          const response = await fetch(lastRecordingUri);
+          audioBlob = await response.blob();
+          console.log('Blob fetched successfully, size:', audioBlob.size);
+        } catch (err) {
+          console.error('Error fetching audio blob:', err);
+          throw new Error(`Failed to fetch audio file: ${err.message}`);
+        }
+      }
+
+      // Create FormData and append the blob
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.m4a');
+
+      console.log('Sending request to:', `${SERVER_URL}/api/transcribe`);
+      console.log('FormData audio blob size:', audioBlob.size);
+      
       // Send the audio file to your transcription endpoint
-      const response = await fetch('http://localhost:3000/api/transcribe', {
+      const response = await fetch(`${SERVER_URL}/api/transcribe`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Accept': 'application/json',
-        },
       });
 
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+
       if (!response.ok) {
-        throw new Error('Failed to transcribe audio');
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Failed to transcribe audio');
+        } catch (e) {
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
       }
 
       const result = await response.json();
+      console.log('Transcription result:', result);
       
       if (result.text) {
+        console.log('Adding transcript to note...');
         await addTranscriptToNote(noteId, result.text);
         onTranscriptionComplete(result.text);
         setLastRecordingUri(null); // Reset after successful transcription
+        console.log('Transcription complete and saved.');
+      } else {
+        throw new Error('No transcription text received from server');
       }
     } catch (err) {
       console.error('Transcription error:', err);
-      setError('Failed to transcribe audio. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to transcribe audio. Please try again.');
     } finally {
       setIsTranscribing(false);
     }

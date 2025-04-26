@@ -1,42 +1,56 @@
-import { View, Text, StyleSheet, Pressable, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, Modal, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import useNotesStore from '../store/notes';
 import { useTasksStore } from '../store/tasks';
 import { useAuthStore } from '../store/auth';
 import { useState } from 'react';
-import { RichTextEditor } from './RichTextEditor';
+import RichTextEditor from './RichTextEditor';
 
 interface LinkedNotesProps {
   taskId: string;
-  noteIds: string[];
+  noteIds?: string[]; // Make noteIds optional since it might not exist on a new task
 }
 
-export function LinkedNotes({ taskId, noteIds }: LinkedNotesProps) {
+export function LinkedNotes({ taskId, noteIds = [] }: LinkedNotesProps) {
   const { notes } = useNotesStore();
   const { unlinkNoteFromTask } = useTasksStore();
   const { user } = useAuthStore();
   const router = useRouter();
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
   
-  const linkedNotes = notes.filter(note => noteIds?.includes(note._id));
+  const linkedNotes = notes.filter(note => noteIds.includes(note._id));
 
   const handleUnlink = async (noteId: string) => {
-    // Check if user has permission to unlink note
-    const noteToUnlink = notes.find(note => note._id === noteId);
-    if (!noteToUnlink || (noteToUnlink.userId && noteToUnlink.userId !== user?.uid)) {
-      alert("You don't have permission to unlink this note");
-      return;
-    }
+    if (isUnlinking) return; // Prevent multiple simultaneous unlink attempts
     
-    await unlinkNoteFromTask(taskId, noteId);
+    try {
+      setIsUnlinking(true);
+      // Check if user has permission to unlink note
+      const noteToUnlink = notes.find(note => note._id === noteId);
+      if (!noteToUnlink || (noteToUnlink.userId && noteToUnlink.userId !== user?.uid)) {
+        Alert.alert("Permission Denied", "You don't have permission to unlink this note");
+        return;
+      }
+      
+      await unlinkNoteFromTask(taskId, noteId);
+    } catch (error) {
+      console.error('Error unlinking note:', error);
+      Alert.alert(
+        "Error",
+        "Failed to unlink note. Please try again."
+      );
+    } finally {
+      setIsUnlinking(false);
+    }
   };
 
   const handleAddNote = () => {
     // Check if user is logged in
     if (!user) {
-      router.push("/auth/login");
-      return null;
+      router.push('/auth/login' as any);
+      return;
     }
     
     setShowNoteModal(true);
@@ -46,7 +60,11 @@ export function LinkedNotes({ taskId, noteIds }: LinkedNotesProps) {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>No linked notes</Text>
-        <Pressable style={styles.addButton} onPress={handleAddNote}>
+        <Pressable 
+          style={styles.addButton} 
+          onPress={handleAddNote}
+          disabled={!user}
+        >
           <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
           <Text style={styles.addButtonText}>Add Note</Text>
         </Pressable>
@@ -79,12 +97,15 @@ export function LinkedNotes({ taskId, noteIds }: LinkedNotesProps) {
         
         return (
           <View key={note._id} style={styles.noteCard}>
-            <Link href={hasPermission ? `/note/${note._id}` : ""} asChild>
+            <Link href={hasPermission ? `/note/${note._id}` as any : '/notes' as any} asChild>
               <Pressable 
                 style={styles.noteContent}
                 onPress={() => {
                   if (!hasPermission) {
-                    alert("You don't have permission to view this note");
+                    Alert.alert(
+                      "Permission Denied",
+                      "You don't have permission to view this note"
+                    );
                   }
                 }}
               >
@@ -105,16 +126,28 @@ export function LinkedNotes({ taskId, noteIds }: LinkedNotesProps) {
             </Link>
             {hasPermission && (
               <Pressable
-                style={styles.unlinkButton}
+                style={[
+                  styles.unlinkButton,
+                  isUnlinking && styles.unlinkButtonDisabled
+                ]}
                 onPress={() => handleUnlink(note._id)}
+                disabled={isUnlinking}
               >
-                <Ionicons name="close-circle" size={20} color="#FF3B30" />
+                <Ionicons 
+                  name="close-circle" 
+                  size={20} 
+                  color={isUnlinking ? "#999" : "#FF3B30"} 
+                />
               </Pressable>
             )}
           </View>
         );
       })}
-      <Pressable style={styles.addButton} onPress={handleAddNote}>
+      <Pressable 
+        style={styles.addButton} 
+        onPress={handleAddNote}
+        disabled={!user}
+      >
         <Ionicons name="add-circle-outline" size={20} color="#007AFF" />
         <Text style={styles.addButtonText}>Add Note</Text>
       </Pressable>
@@ -191,6 +224,9 @@ const styles = StyleSheet.create({
   unlinkButton: {
     padding: 12,
   },
+  unlinkButtonDisabled: {
+    opacity: 0.5,
+  },
   emptyContainer: {
     marginTop: 16,
     alignItems: 'center',
@@ -204,12 +240,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    marginTop: 8,
   },
   addButtonText: {
     marginLeft: 4,
     fontSize: 14,
     color: '#007AFF',
-    fontWeight: '500',
   },
   modalContainer: {
     flex: 1,

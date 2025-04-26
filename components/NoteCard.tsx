@@ -1,3 +1,4 @@
+import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, TouchableOpacity, GestureResponderEvent } from 'react-native';
 import { format } from 'date-fns';
 import { Link, Href } from 'expo-router';
@@ -34,37 +35,55 @@ function AudioRecordingItem({ recording, noteId, onTranscriptionComplete }: Audi
       setIsTranscribing(true);
       setError(null);
       
+      console.log('Starting transcription for URL:', recording.url);
+      
       // Create FormData for the audio file
       const formData = new FormData();
-      // @ts-ignore - React Native's FormData accepts additional properties
-      formData.append('audio', {
-        uri: recording.url,
-        type: 'audio/wav',
-        name: 'recording.wav'
-      });
+      
+      // Get the audio file from the URL
+      const audioResponse = await fetch(recording.url);
+      if (!audioResponse.ok) {
+        throw new Error('Failed to fetch audio file');
+      }
+      
+      const audioBlob = await audioResponse.blob();
+      console.log('Audio blob created:', audioBlob.size, 'bytes');
+      
+      formData.append('audio', audioBlob, 'recording.wav');
 
+      console.log('Sending transcription request to server...');
+      
       // Send the audio file to your transcription endpoint
-      const response = await fetch('http://localhost:3000/api/transcribe', {
+      const response = await fetch('http://10.40.13.29:8003/api/transcribe', {
         method: 'POST',
         body: formData,
         headers: {
           'Accept': 'application/json',
+          'Content-Type': 'multipart/form-data',
         },
       });
 
+      console.log('Server response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to transcribe audio');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Server error:', errorData);
+        throw new Error(errorData.error || 'Failed to transcribe audio');
       }
 
       const result = await response.json();
+      console.log('Transcription result:', result);
       
       if (result.text) {
+        console.log('Saving transcription to note...');
         await addTranscriptToNote(noteId, result.text);
         onTranscriptionComplete(result.text);
+        // Update local state to show transcription immediately
+        recording.transcript = result.text;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Transcription error:', err);
-      setError('Failed to transcribe audio. Please try again.');
+      setError(err.message || 'Failed to transcribe audio. Please try again.');
     } finally {
       setIsTranscribing(false);
     }
@@ -167,74 +186,94 @@ export function NoteCard({ note }: NoteCardProps) {
   };
 
   return (
-    <Link href={`/note/${note._id}` as unknown as Href} asChild>
-      <Pressable style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>
-            {note.title}
-          </Text>
-          <View style={styles.headerActions}>
-            <Text style={styles.date}>
-              {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
-            </Text>
-            {hasPermission && (
+    <View style={styles.wrapper}>
+      {/* Audio recordings section */}
+      {note.audioRecordings && note.audioRecordings.length > 0 && (
+        <View style={styles.audioSection}>
+          <View style={styles.audioHeader}>
+            <Ionicons name="musical-notes" size={16} color="#007AFF" />
+            <Text style={styles.audioTitle}>Audio Recordings ({note.audioRecordings.length})</Text>
+          </View>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.recordingsScroll}
+            onStartShouldSetResponder={() => true}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              return true;
+            }}
+          >
+            {note.audioRecordings.map((recording, index) => (
               <Pressable 
-                style={styles.deleteButton}
-                onPress={handleDeleteNote}
+                key={index}
+                onPress={(e) => {
+                  e.stopPropagation();
+                }}
               >
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-              </Pressable>
-            )}
-          </View>
-        </View>
-        {subject && (
-          <View style={[styles.subjectTag, { backgroundColor: subject.color + '20' }]}>
-            <Text style={[styles.subjectText, { color: subject.color }]}>
-              {subject.name}
-            </Text>
-          </View>
-        )}
-        
-        {/* Audio recordings section */}
-        {note.audioRecordings && note.audioRecordings.length > 0 && (
-          <View style={styles.audioSection}>
-            <View style={styles.audioHeader}>
-              <Ionicons name="musical-notes" size={16} color="#007AFF" />
-              <Text style={styles.audioTitle}>Audio Recordings ({note.audioRecordings.length})</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recordingsScroll}>
-              {note.audioRecordings.map((recording, index) => (
                 <AudioRecordingItem
-                  key={index}
                   recording={recording}
                   noteId={note._id}
                   onTranscriptionComplete={handleTranscriptionComplete}
                 />
-              ))}
-            </ScrollView>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Note content section */}
+      <Link href={`/note/${note._id}` as unknown as Href} asChild>
+        <Pressable style={styles.container}>
+          <View style={styles.header}>
+            <Text style={styles.title} numberOfLines={1}>
+              {note.title}
+            </Text>
+            <View style={styles.headerActions}>
+              <Text style={styles.date}>
+                {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
+              </Text>
+              {hasPermission && (
+                <Pressable 
+                  style={styles.deleteButton}
+                  onPress={handleDeleteNote}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                </Pressable>
+              )}
+            </View>
           </View>
-        )}
-        
-        {/* Show TranscriptionManager when user has permission */}
-        {hasPermission && (
-          <TranscriptionManager 
-            onTranscriptionComplete={handleTranscriptionComplete}
-            noteId={note._id}
-          />
-        )}
-        
-        <NoteSummary note={note} />
-      </Pressable>
-    </Link>
+          {subject && (
+            <View style={[styles.subjectTag, { backgroundColor: subject.color + '20' }]}>
+              <Text style={[styles.subjectText, { color: subject.color }]}>
+                {subject.name}
+              </Text>
+            </View>
+          )}
+          
+          {/* Show TranscriptionManager when user has permission */}
+          {hasPermission && (
+            <TranscriptionManager 
+              onTranscriptionComplete={handleTranscriptionComplete}
+              noteId={note._id}
+            />
+          )}
+          
+          <NoteSummary note={note} />
+        </Pressable>
+      </Link>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    marginBottom: 12,
+  },
   container: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
     ...Platform.select({
       ios: {
         shadowColor: '#000',

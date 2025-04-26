@@ -89,25 +89,26 @@ export function AudioRecorder({ onRecordingComplete }: AudioRecorderProps) {
       try {
         await newRecording.prepareToRecordAsync({
           android: {
-            extension: '.wav',
-            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
+            extension: '.m4a',
+            outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+            audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
             sampleRate: 44100,
-            numberOfChannels: 1,
+            numberOfChannels: 2,
             bitRate: 128000,
           },
           ios: {
-            extension: '.wav',
-            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+            extension: '.m4a',
+            outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
+            audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
             sampleRate: 44100,
-            numberOfChannels: 1,
+            numberOfChannels: 2,
             bitRate: 128000,
             linearPCMBitDepth: 16,
             linearPCMIsBigEndian: false,
             linearPCMIsFloat: false,
           },
           web: {
-            mimeType: 'audio/wav',
+            mimeType: 'audio/mp4',
             bitsPerSecond: 128000,
           },
         });

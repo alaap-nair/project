@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/auth';
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 
-const TabLayout = () => {
+export default function TabLayout() {
   const { setShowCreateModal } = useNotesStore();
   const { user, isAuthReady } = useAuthStore();
   const [activeTab, setActiveTab] = useState('index');
@@ -62,9 +62,9 @@ const TabLayout = () => {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tasks',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="checkbox-outline" size={24} color={color} />
+          title: 'Notes',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" size={size} color={color} />
           ),
         }}
       />
@@ -72,8 +72,9 @@ const TabLayout = () => {
       <Tabs.Screen
         name="subjects"
         options={{
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="library" size={24} color={color} />
+          title: 'Subjects',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="library-outline" size={size} color={color} />
           ),
         }}
       />
@@ -97,9 +98,9 @@ const TabLayout = () => {
       <Tabs.Screen
         name="tasks"
         options={{
-          title: 'Notes',
+          title: 'Tasks',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text-outline" size={size} color={color} />
+            <Ionicons name="checkbox-outline" size={size} color={color} />
           ),
         }}
       />
@@ -115,7 +116,7 @@ const TabLayout = () => {
       />
     </Tabs>
   );
-};
+}
 
 const styles = StyleSheet.create({
   addButtonContainer: {
@@ -143,6 +144,4 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 });
-
-export default TabLayout;
 

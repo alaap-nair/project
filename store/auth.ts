@@ -12,6 +12,9 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Platform } from 'react-native';
 
+// Set up auth state listener only once
+let authUnsubscribe: (() => void) | null = null;
+
 interface AuthStore {
   user: User | null;
   isLoading: boolean;
@@ -24,69 +27,6 @@ interface AuthStore {
   cleanup: () => void;
 }
 
-// Set up auth state listener only once
-let unsubscribe: (() => void) | null = null;
-let authStateChangeTimeout: NodeJS.Timeout | null = null;
-
-// Initialize auth state listener
-const initializeAuthListener = () => {
-  if (!unsubscribe) {
-    console.log('Initializing auth state listener...');
-
-    unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Clear any pending timeouts
-      if (authStateChangeTimeout) {
-        clearTimeout(authStateChangeTimeout);
-      }
-
-      // Debounce auth state changes to prevent rapid updates
-      authStateChangeTimeout = setTimeout(async () => {
-        console.log('Auth state changed:', { 
-          user: user?.uid, 
-          timestamp: new Date().toISOString(),
-          platform: Platform.OS,
-          isAuthReady: true
-        });
-
-        if (user) {
-          try {
-            // Force token refresh if needed
-            const token = await user.getIdToken(true);
-            console.log('Token refreshed successfully:', {
-              uid: user.uid,
-              timestamp: new Date().toISOString()
-            });
-          } catch (error) {
-            console.error('Error refreshing token:', error);
-            // Only force sign out for fatal token errors
-            if (error instanceof Error && 
-                (error.message.includes('auth/id-token-expired') || 
-                 error.message.includes('auth/user-token-expired'))) {
-              console.log('Fatal token error, signing out:', error);
-              await useAuthStore.getState().signOut();
-              return;
-            }
-          }
-        }
-
-        useAuthStore.setState({ 
-          user, 
-          isAuthReady: true,
-          isLoading: false,
-          error: null
-        });
-      }, 500); // 500ms debounce
-    }, (error) => {
-      console.error('Auth state change error:', error);
-      useAuthStore.setState({ 
-        error: 'Authentication error occurred',
-        isAuthReady: true,
-        isLoading: false 
-      });
-    });
-  }
-};
-
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: false,
@@ -97,11 +37,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       console.log(`Attempting to sign in with email: ${email}`);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      // Ensure we have a fresh token
-      await userCredential.user.getIdToken(true);
-      console.log('Sign in successful with fresh token');
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log('Sign in successful');
     } catch (error) {
       console.error('Error signing in:', error);
       let errorMessage = 'Failed to sign in';
@@ -193,16 +130,25 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   cleanup: () => {
-    if (unsubscribe) {
-      unsubscribe();
-      unsubscribe = null;
-    }
-    if (authStateChangeTimeout) {
-      clearTimeout(authStateChangeTimeout);
-      authStateChangeTimeout = null;
+    if (authUnsubscribe) {
+      authUnsubscribe();
+      authUnsubscribe = null;
     }
   },
 }));
 
-// Initialize the auth listener immediately
-initializeAuthListener();
+// Initialize auth state listener
+if (!authUnsubscribe) {
+  authUnsubscribe = onAuthStateChanged(auth, (user) => {
+    console.log('Auth state changed:', user ? `User ${user.uid} signed in` : 'User signed out');
+    useAuthStore.setState({ user, isAuthReady: true });
+  });
+}
+
+// Export the cleanup function for use in app unmount
+export const cleanup = () => {
+  if (authUnsubscribe) {
+    authUnsubscribe();
+    authUnsubscribe = null;
+  }
+};

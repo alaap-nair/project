@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,31 +14,17 @@ const firebaseConfig = {
   appId: "1:70256622721:web:e08844cc4cc1f78cfc2180",
 };
 
-// Initialize Firebase
-let app;
-let auth;
-let db;
-let storage;
+// Initialize Firebase if it hasn't been initialized yet
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// Ensure Firebase is initialized only once
-if (!getApps().length) {
-  console.log('Initializing new Firebase app...');
-  app = initializeApp(firebaseConfig);
-  
-  // Initialize auth with React Native persistence
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
-  
-  console.log('Auth initialized with React Native persistence');
-} else {
-  console.log('Reusing existing Firebase app...');
-  app = getApp();
-  auth = getAuth(app);
-}
+// Initialize Firebase Auth with AsyncStorage persistence
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
 
-db = getFirestore(app);
-storage = getStorage(app);
+// Initialize other Firebase services
+const db = getFirestore(app);
+const storage = getStorage(app);
 
 console.log('Firebase services initialized successfully');
 

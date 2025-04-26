@@ -25,6 +25,7 @@ function AudioRecordingItem({ recording, noteId, onTranscriptionComplete }: Audi
   const { addTranscriptToNote } = useNotesStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleTranscribe = async () => {
     if (isTranscribing) return;
@@ -69,6 +70,12 @@ function AudioRecordingItem({ recording, noteId, onTranscriptionComplete }: Audi
     }
   };
 
+  const getPreviewText = (text: string) => {
+    const words = text.split(' ');
+    if (words.length <= 10) return text;
+    return words.slice(0, 10).join(' ') + '...';
+  };
+
   return (
     <View style={styles.recordingItem}>
       <AudioPlayer audioUri={recording.url} />
@@ -89,12 +96,25 @@ function AudioRecordingItem({ recording, noteId, onTranscriptionComplete }: Audi
         </TouchableOpacity>
       </View>
       {recording.transcript && (
-        <View style={styles.transcriptContainer}>
-          <Text style={styles.transcriptTitle}>Transcript</Text>
-          <Text style={styles.transcriptText} numberOfLines={3}>
-            {recording.transcript}
+        <TouchableOpacity 
+          style={styles.transcriptContainer}
+          onPress={() => setIsExpanded(!isExpanded)}
+        >
+          <View style={styles.transcriptHeader}>
+            <Text style={styles.transcriptTitle}>Transcript</Text>
+            <Ionicons 
+              name={isExpanded ? 'chevron-up' : 'chevron-down'} 
+              size={16} 
+              color="#8E8E93" 
+            />
+          </View>
+          <Text 
+            style={styles.transcriptText} 
+            numberOfLines={isExpanded ? undefined : 2}
+          >
+            {isExpanded ? recording.transcript : getPreviewText(recording.transcript)}
           </Text>
-        </View>
+        </TouchableOpacity>
       )}
       {error && (
         <Text style={styles.errorText}>{error}</Text>
@@ -321,11 +341,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 6,
   },
+  transcriptHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   transcriptTitle: {
     fontSize: 12,
     fontWeight: '600',
     color: '#1C1C1E',
-    marginBottom: 4,
   },
   transcriptText: {
     fontSize: 12,

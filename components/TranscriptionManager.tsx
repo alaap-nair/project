@@ -252,49 +252,54 @@ export function TranscriptionManager({
       {showRecorder ? (
         <AudioRecorder onRecordingComplete={handleRecordingComplete} />
       ) : audioUri ? (
-        <View style={styles.audioPlayerContainer}>
-          <View style={styles.audioInfoContainer}>
-            <TouchableOpacity 
-              style={styles.playButton}
-              onPress={handlePlayPause}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <ActivityIndicator size="small" color="#007AFF" />
-              ) : (
-                <Ionicons
-                  name={isPlaying ? 'pause' : 'play'}
-                  size={24}
-                  color="#007AFF"
-                />
-              )}
-            </TouchableOpacity>
-            <View style={styles.audioInfo}>
-              <Text style={styles.audioTitle}>
-                {isUploading ? 'Saving Recording...' : 'Recording'}
-              </Text>
-              <Text style={styles.audioDuration}>{formatDuration(audioDuration)}</Text>
+        <View>
+          <View style={styles.audioPlayerContainer}>
+            <View style={styles.audioInfoContainer}>
+              <TouchableOpacity 
+                style={styles.playButton}
+                onPress={handlePlayPause}
+                disabled={isUploading}
+              >
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#007AFF" />
+                ) : (
+                  <Ionicons
+                    name={isPlaying ? 'pause' : 'play'}
+                    size={24}
+                    color="#007AFF"
+                  />
+                )}
+              </TouchableOpacity>
+              <View style={styles.audioInfo}>
+                <Text style={styles.audioTitle}>
+                  {isUploading ? 'Saving Recording...' : 'Recording'}
+                </Text>
+                <Text style={styles.audioDuration}>{formatDuration(audioDuration)}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.transcribeButton}
+                onPress={() => handleTranscribe(audioUri)}
+                disabled={isTranscribing || isUploading}
+              >
+                <Ionicons name="document-text" size={20} color={isTranscribing || isUploading ? '#C7C7CC' : '#007AFF'} />
+                <Text style={[styles.transcribeText, (isTranscribing || isUploading) && styles.disabledText]}>
+                  {isTranscribing ? 'Transcribing...' : 'Transcribe'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.newRecordingButton}
+                onPress={handleNewRecording}
+                disabled={isUploading}
+              >
+                <Ionicons name="mic" size={20} color={isUploading ? '#C7C7CC' : '#007AFF'} />
+                <Text style={[styles.newRecordingText, isUploading && styles.disabledText]}>New</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity 
-              style={styles.newRecordingButton}
-              onPress={handleNewRecording}
-              disabled={isUploading}
-            >
-              <Ionicons name="mic" size={20} color={isUploading ? '#C7C7CC' : '#007AFF'} />
-              <Text style={[styles.newRecordingText, isUploading && styles.disabledText]}>New</Text>
-            </TouchableOpacity>
           </View>
+          
+          {error && <Text style={styles.errorText}>{error}</Text>}
         </View>
       ) : null}
-      
-      {isTranscribing && (
-        <View style={styles.transcribingContainer}>
-          <ActivityIndicator size="small" color="#007AFF" />
-          <Text style={styles.transcribingText}>Transcribing audio...</Text>
-        </View>
-      )}
-      
-      {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
 }
@@ -334,6 +339,20 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     marginTop: 2,
   },
+  transcribeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E5E5EA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  transcribeText: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginLeft: 4,
+  },
   newRecordingButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -349,15 +368,6 @@ const styles = StyleSheet.create({
   },
   disabledText: {
     color: '#C7C7CC',
-  },
-  transcribingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  transcribingText: {
-    marginLeft: 10,
-    color: '#007AFF',
   },
   errorText: {
     marginTop: 10,

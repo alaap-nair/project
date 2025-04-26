@@ -89,7 +89,7 @@ export function NoteCard({ note }: NoteCardProps) {
         )}
         
         {/* Audio section */}
-        {note.audioUrl ? (
+        {note.audioUrl && (
           <View style={styles.audioSection}>
             <View style={styles.audioHeader}>
               <Ionicons name="musical-note" size={16} color="#007AFF" />
@@ -97,24 +97,25 @@ export function NoteCard({ note }: NoteCardProps) {
             </View>
             <AudioPlayer audioUri={note.audioUrl} />
           </View>
-        ) : null}
+        )}
+        
+        {/* Show TranscriptionManager when user has permission */}
+        {hasPermission && (
+          <TranscriptionManager 
+            onTranscriptionComplete={handleTranscriptionComplete}
+            existingAudioUri={note.audioUrl}
+            noteId={note._id}
+          />
+        )}
         
         {/* Transcript section */}
-        {note.transcript ? (
+        {note.transcript && (
           <View style={styles.transcriptContainer}>
             <Text style={styles.transcriptTitle}>Transcript</Text>
             <Text style={styles.transcriptText} numberOfLines={3}>
               {note.transcript}
             </Text>
           </View>
-        ) : (
-          hasPermission && (
-            <TranscriptionManager 
-              onTranscriptionComplete={handleTranscriptionComplete}
-              existingAudioUri={note.audioUrl}
-              noteId={note._id}
-            />
-          )
         )}
         <NoteSummary note={note} />
       </Pressable>

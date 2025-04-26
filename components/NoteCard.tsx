@@ -1,14 +1,14 @@
-import { View, Text, Pressable, StyleSheet, Platform, Alert } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView } from 'react-native';
 import { format } from 'date-fns';
 import { Link } from 'expo-router';
-import type { Note } from '../store/notes';
+import type { Note, AudioRecording } from '../store/notes';
 import { useSubjectsStore } from '../store/subjects';
 import useNotesStore from '../store/notes';
 import { useAuthStore } from '../store/auth';
 import { NoteSummary } from './NoteSummary';
 import { TranscriptionManager } from './TranscriptionManager';
 import { AudioPlayer } from './AudioPlayer';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 interface NoteCardProps {
@@ -88,14 +88,28 @@ export function NoteCard({ note }: NoteCardProps) {
           </View>
         )}
         
-        {/* Audio section */}
-        {note.audioUrl && (
+        {/* Audio recordings section */}
+        {note.audioRecordings && note.audioRecordings.length > 0 && (
           <View style={styles.audioSection}>
             <View style={styles.audioHeader}>
-              <Ionicons name="musical-note" size={16} color="#007AFF" />
-              <Text style={styles.audioTitle}>Audio Recording</Text>
+              <Ionicons name="musical-notes" size={16} color="#007AFF" />
+              <Text style={styles.audioTitle}>Audio Recordings ({note.audioRecordings.length})</Text>
             </View>
-            <AudioPlayer audioUri={note.audioUrl} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recordingsScroll}>
+              {note.audioRecordings.map((recording, index) => (
+                <View key={index} style={styles.recordingItem}>
+                  <AudioPlayer audioUri={recording.url} />
+                  {recording.transcript && (
+                    <View style={styles.transcriptContainer}>
+                      <Text style={styles.transcriptTitle}>Transcript</Text>
+                      <Text style={styles.transcriptText} numberOfLines={3}>
+                        {recording.transcript}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
           </View>
         )}
         
@@ -103,20 +117,10 @@ export function NoteCard({ note }: NoteCardProps) {
         {hasPermission && (
           <TranscriptionManager 
             onTranscriptionComplete={handleTranscriptionComplete}
-            existingAudioUri={note.audioUrl}
             noteId={note._id}
           />
         )}
         
-        {/* Transcript section */}
-        {note.transcript && (
-          <View style={styles.transcriptContainer}>
-            <Text style={styles.transcriptTitle}>Transcript</Text>
-            <Text style={styles.transcriptText} numberOfLines={3}>
-              {note.transcript}
-            </Text>
-          </View>
-        )}
         <NoteSummary note={note} />
       </Pressable>
     </Link>
@@ -185,7 +189,7 @@ const styles = StyleSheet.create({
   audioHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   audioTitle: {
     fontSize: 14,
@@ -193,21 +197,32 @@ const styles = StyleSheet.create({
     color: '#1C1C1E',
     marginLeft: 4,
   },
-  transcriptContainer: {
-    marginVertical: 8,
-    padding: 12,
+  recordingsScroll: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  recordingItem: {
+    marginRight: 12,
     backgroundColor: '#F2F2F7',
     borderRadius: 8,
+    padding: 8,
+    width: 280,
+  },
+  transcriptContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 6,
   },
   transcriptTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#1C1C1E',
     marginBottom: 4,
   },
   transcriptText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#3C3C43',
-    lineHeight: 20,
+    lineHeight: 16,
   },
 });

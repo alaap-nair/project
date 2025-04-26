@@ -4,14 +4,19 @@ import { firestore } from '../firebase.config';
 import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
 import { useAuthStore } from './auth';
 
+export interface AudioRecording {
+  url: string;
+  transcript?: string;
+  createdAt: string;
+}
+
 export interface Note {
   _id: string;
   userId: string; // Add userId field to associate notes with users
   title: string;
   content: string;
   subjectId?: string;
-  audioUrl?: string;
-  transcript?: string;
+  audioRecordings: AudioRecording[];  // New field for multiple recordings
   taskIds: string[];  // Array of linked task IDs
   createdAt: string;
   updatedAt: string;
@@ -154,8 +159,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         content: note.content || '', // Ensure content is never undefined
         subjectId: note.subjectId || null,
         taskIds: Array.isArray(note.taskIds) ? note.taskIds.filter(id => typeof id === 'string') : [],
-        audioUrl: typeof note.audioUrl === 'string' && note.audioUrl.trim() !== '' ? note.audioUrl : null,
-        transcript: typeof note.transcript === 'string' ? note.transcript : null,
+        audioRecordings: Array.isArray(note.audioRecordings) ? note.audioRecordings.filter(rec => typeof rec.url === 'string') : [],
       };
       
       // Remove any undefined or null fields to prevent Firestore errors
@@ -397,7 +401,13 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
-        audioUrl,
+        audioRecordings: [
+          ...(note.audioRecordings || []),
+          {
+            url: audioUrl,
+            createdAt: new Date().toISOString()
+          }
+        ],
         updatedAt: serverTimestamp()
       });
       
@@ -405,7 +415,13 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: state.notes.map((note) =>
           note._id === noteId ? { 
             ...note, 
-            audioUrl, 
+            audioRecordings: [
+              ...(note.audioRecordings || []),
+              {
+                url: audioUrl,
+                createdAt: new Date().toISOString()
+              }
+            ],
             updatedAt: new Date().toISOString() 
           } : note
         ),
@@ -441,7 +457,14 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
-        transcript,
+        audioRecordings: [
+          ...(note.audioRecordings || []),
+          {
+            url: note.audioRecordings[0]?.url || '',
+            transcript,
+            createdAt: new Date().toISOString()
+          }
+        ],
         updatedAt: serverTimestamp()
       });
       
@@ -449,7 +472,14 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: state.notes.map((note) =>
           note._id === noteId ? { 
             ...note, 
-            transcript, 
+            audioRecordings: [
+              ...(note.audioRecordings || []),
+              {
+                url: note.audioRecordings[0]?.url || '',
+                transcript,
+                createdAt: new Date().toISOString()
+              }
+            ],
             updatedAt: new Date().toISOString() 
           } : note
         ),

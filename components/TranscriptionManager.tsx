@@ -12,23 +12,21 @@ import * as FileSystem from 'expo-file-system';
 
 interface TranscriptionManagerProps {
   onTranscriptionComplete: (transcript: string) => void;
-  existingAudioUri?: string;
-  noteId?: string;
+  noteId: string;
 }
 
 export function TranscriptionManager({ 
-  onTranscriptionComplete, 
-  existingAudioUri,
+  onTranscriptionComplete,
   noteId
 }: TranscriptionManagerProps) {
   const { addAudioToNote, addTranscriptToNote } = useNotesStore();
   const { user } = useAuthStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [audioUri, setAudioUri] = useState<string | null>(existingAudioUri || null);
+  const [audioUri, setAudioUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [audioDuration, setAudioDuration] = useState<number>(0);
-  const [showRecorder, setShowRecorder] = useState(!existingAudioUri);
+  const [showRecorder, setShowRecorder] = useState(true);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -43,149 +41,49 @@ export function TranscriptionManager({
 
   const handleRecordingComplete = async (uri: string, duration: number) => {
     try {
-      console.log('Raw recording URI:', uri);
-      
-      // Check if user is authenticated
-      if (!user) {
-        setError('You must be logged in to save recordings');
-        return;
-      }
-      
-      // Validate URI
-      if (!uri || typeof uri !== 'string') {
-        setError('Invalid recording URI');
-        return;
-      }
-      
-      // Fix potential URI format issues for local playback
-      let fixedUri = uri;
-      
-      // For iOS, file:// URIs need to be properly formatted
-      if (Platform.OS === 'ios' && !uri.startsWith('file://')) {
-        fixedUri = uri.replace('file:', 'file://');
-      }
-      
-      console.log('Using audio URI for local playback:', fixedUri);
-      
-      setAudioUri(fixedUri);
-      setAudioDuration(duration);
-      setShowRecorder(false);
-      
-      // Upload to Firebase Storage to get a permanent URL
-      if (noteId) {
-        try {
-          setIsUploading(true);
-          setError(null);
-          
-          // Check file exists before uploading
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(fixedUri);
-            if (!fileInfo.exists) {
-              throw new Error(`Recording file does not exist at path: ${fixedUri}`);
-            }
-            console.log('File info:', fileInfo);
-          } catch (fileError) {
-            console.error('Error checking file info:', fileError);
-            setError('Recording file could not be accessed. Please try again.');
-            return;
-          }
-          
-          // Upload to user-specific storage path
-          console.log('Starting upload to Firebase Storage...');
-          const cloudStorageUrl = await uploadAudioToStorage(fixedUri, `users/${user.uid}/audio`);
-          
-          if (!cloudStorageUrl) {
-            throw new Error('Upload completed but no URL was returned');
-          }
-          
-          console.log('Uploaded to Firebase Storage:', cloudStorageUrl);
-          
-          // Save permanent URL to note
-          await addAudioToNote(noteId, cloudStorageUrl);
-          console.log('Permanent audio URL saved to note:', noteId);
-          
-          // Update local URI to use the permanent URL
-          setAudioUri(cloudStorageUrl);
-          
-          // Automatically start transcription with the cloud URL
-          handleTranscribe(cloudStorageUrl);
-        } catch (err) {
-          console.error('Error uploading and saving audio:', err);
-          if (err instanceof Error) {
-            console.error('Error details:', err.message);
-            setError(`Failed to save audio: ${err.message}`);
-          } else {
-            setError('Failed to save audio recording. The recording is available temporarily but may not persist when you close the app.');
-          }
-          
-          // Still try to transcribe using the local URI
-          handleTranscribe(fixedUri);
-        } finally {
-          setIsUploading(false);
-        }
-      } else {
-        // If no noteId, just use the local URI for transcription
-        handleTranscribe(fixedUri);
-      }
+      console.log('Recording completed, URI:', uri);
+      await addAudioToNote(noteId, uri);
+      setShowRecorder(true);
     } catch (err) {
-      console.error('Error handling recording completion:', err);
-      if (err instanceof Error) {
-        console.error('Error details:', err.message);
-        setError(`Error: ${err.message}`);
-      } else {
-        setError('An error occurred while processing the recording.');
-      }
+      console.error('Error handling recording:', err);
+      setError('Failed to save recording. Please try again.');
     }
   };
 
   const handleTranscribe = async (uri: string) => {
-    if (isTranscribing) return;
-    
-    setIsTranscribing(true);
-    setError(null);
-
     try {
-      // Create form data for the audio file
+      setError(null);
+      
+      // Create FormData for the audio file
       const formData = new FormData();
       formData.append('audio', {
-        uri: uri,
-        type: 'audio/m4a',
-        name: 'recording.m4a',
+        uri,
+        type: 'audio/wav',
+        name: 'recording.wav'
       });
 
-      // Send to backend for transcription
-      const response = await apiClient.post('/api/transcribe', formData, {
+      // Send the audio file to your transcription endpoint
+      const response = await fetch('http://localhost:3000/api/transcribe', {
+        method: 'POST',
+        body: formData,
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Accept': 'application/json',
         },
       });
 
-      if (response.data.transcript) {
-        const transcript = response.data.transcript;
-        
-        // Save transcript to note if noteId is provided
-        if (noteId) {
-          try {
-            await addTranscriptToNote(noteId, transcript);
-            console.log('Transcript saved to note:', noteId);
-          } catch (err) {
-            console.error('Error saving transcript to note:', err);
-            setError('Failed to save transcript to note');
-          }
-        }
-        
-        onTranscriptionComplete(transcript);
+      if (!response.ok) {
+        throw new Error('Failed to transcribe audio');
       }
-    } catch (err: any) {
-      console.error('Transcription error:', err);
+
+      const result = await response.json();
       
-      if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error);
-      } else {
-        setError('Failed to transcribe audio. Please try again.');
+      if (result.text) {
+        await addTranscriptToNote(noteId, result.text);
+        onTranscriptionComplete(result.text);
       }
-    } finally {
-      setIsTranscribing(false);
+    } catch (err) {
+      console.error('Transcription error:', err);
+      setError('Failed to transcribe audio. Please try again.');
     }
   };
 
@@ -249,57 +147,9 @@ export function TranscriptionManager({
 
   return (
     <View style={styles.container}>
-      {showRecorder ? (
+      {showRecorder && (
         <AudioRecorder onRecordingComplete={handleRecordingComplete} />
-      ) : audioUri ? (
-        <View>
-          <View style={styles.audioPlayerContainer}>
-            <View style={styles.audioInfoContainer}>
-              <TouchableOpacity 
-                style={styles.playButton}
-                onPress={handlePlayPause}
-                disabled={isUploading}
-              >
-                {isUploading ? (
-                  <ActivityIndicator size="small" color="#007AFF" />
-                ) : (
-                  <Ionicons
-                    name={isPlaying ? 'pause' : 'play'}
-                    size={24}
-                    color="#007AFF"
-                  />
-                )}
-              </TouchableOpacity>
-              <View style={styles.audioInfo}>
-                <Text style={styles.audioTitle}>
-                  {isUploading ? 'Saving Recording...' : 'Recording'}
-                </Text>
-                <Text style={styles.audioDuration}>{formatDuration(audioDuration)}</Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.transcribeButton}
-                onPress={() => handleTranscribe(audioUri)}
-                disabled={isTranscribing || isUploading}
-              >
-                <Ionicons name="document-text" size={20} color={isTranscribing || isUploading ? '#C7C7CC' : '#007AFF'} />
-                <Text style={[styles.transcribeText, (isTranscribing || isUploading) && styles.disabledText]}>
-                  {isTranscribing ? 'Transcribing...' : 'Transcribe'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.newRecordingButton}
-                onPress={handleNewRecording}
-                disabled={isUploading}
-              >
-                <Ionicons name="mic" size={20} color={isUploading ? '#C7C7CC' : '#007AFF'} />
-                <Text style={[styles.newRecordingText, isUploading && styles.disabledText]}>New</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {error && <Text style={styles.errorText}>{error}</Text>}
-        </View>
-      ) : null}
+      )}
     </View>
   );
 }

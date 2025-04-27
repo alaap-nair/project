@@ -35,8 +35,15 @@ app.post('/summarize', async (req, res) => {
       }),
     });
     
-    const data = await response.json();
-    console.log('Hugging Face API response:', data);
+    let data;
+    try {
+      data = await response.json();
+      console.log('Hugging Face API response:', data);
+    } catch (jsonErr) {
+      const text = await response.text();
+      console.error('Failed to parse JSON. Raw response:', text);
+      return res.status(500).json({ error: 'Failed to parse Hugging Face response as JSON.', details: text });
+    }
     
     if (Array.isArray(data) && data[0] && data[0].summary_text) {
       res.json({ summary: data[0].summary_text });

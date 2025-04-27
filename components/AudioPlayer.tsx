@@ -16,6 +16,7 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
   const [audioDuration, setAudioDuration] = useState(duration);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [speed, setSpeed] = useState(1.0);
 
   // Validate the audio URI
   useEffect(() => {
@@ -63,6 +64,13 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
       }
     };
   }, [isPlaying, sound]);
+
+  // Update playback speed when changed
+  useEffect(() => {
+    if (sound) {
+      sound.setRateAsync(speed, true);
+    }
+  }, [speed, sound]);
 
   const loadSound = async () => {
     try {
@@ -203,6 +211,17 @@ export function AudioPlayer({ audioUri, duration = 0 }: AudioPlayerProps) {
             maximumTrackTintColor="#DDDDDD"
             thumbTintColor="#007AFF"
           />
+          <View style={styles.speedControls}>
+            {[0.5, 1, 1.5, 2].map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.speedButton, speed === s && styles.speedButtonActive]}
+                onPress={() => setSpeed(s)}
+              >
+                <Text style={[styles.speedButtonText, speed === s && styles.speedButtonTextActive]}>{s}x</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </>
       )}
     </View>
@@ -253,5 +272,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#FF3B30',
     padding: 12,
+  },
+  speedControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  speedButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#E5E5EA',
+    marginHorizontal: 4,
+  },
+  speedButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  speedButtonText: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  speedButtonTextActive: {
+    color: '#fff',
   },
 }); 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where, arrayUnion } from 'firebase/firestore';
 import { firestore } from '../firebase.config';
 import { handleIndexError, enhancedGetDocs, createFirestoreIndex } from '../services/firebaseDb';
 import { useAuthStore } from './auth';
@@ -10,7 +10,7 @@ export interface Note {
   title: string;
   content: string;
   subjectId?: string;
-  audioUrl?: string;
+  audioUrls?: string[];
   transcript?: string;
   taskIds: string[];  // Array of linked task IDs
   createdAt: string;
@@ -154,7 +154,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         content: note.content || '', // Ensure content is never undefined
         subjectId: note.subjectId || null,
         taskIds: Array.isArray(note.taskIds) ? note.taskIds.filter(id => typeof id === 'string') : [],
-        audioUrl: typeof note.audioUrl === 'string' && note.audioUrl.trim() !== '' ? note.audioUrl : null,
+        audioUrls: Array.isArray(note.audioUrls) ? note.audioUrls.filter(url => typeof url === 'string') : [],
         transcript: typeof note.transcript === 'string' ? note.transcript : null,
       };
       
@@ -397,7 +397,7 @@ const useNotesStore = create<NotesStore>((set) => ({
       
       const noteRef = doc(firestore, 'notes', noteId);
       await updateDoc(noteRef, {
-        audioUrl,
+        audioUrls: arrayUnion(audioUrl),
         updatedAt: serverTimestamp()
       });
       
@@ -405,8 +405,7 @@ const useNotesStore = create<NotesStore>((set) => ({
         notes: state.notes.map((note) =>
           note._id === noteId ? { 
             ...note, 
-            audioUrl, 
-            updatedAt: new Date().toISOString() 
+            audioUrls: [...(note.audioUrls || []), audioUrl] 
           } : note
         ),
         loading: false

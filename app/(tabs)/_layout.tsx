@@ -1,11 +1,14 @@
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import useNotesStore from '../../store/notes';
+import { useTaskModalStore } from '../../store/taskModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TabLayout = () => {
   const { setShowCreateModal } = useNotesStore();
+  const { setShowTaskModal } = useTaskModalStore();
+  const pathname = usePathname();
   // const insets = useSafeAreaInsets();
   // const reducedInset = Math.max(insets.bottom - 8, 0);
 
@@ -59,7 +62,14 @@ const TabLayout = () => {
             <View style={styles.addButtonContainer}>
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={() => setShowCreateModal(true)}
+                onPress={() => {
+                  if (pathname === '/tasks' || pathname.endsWith('/tasks')) {
+                    setShowTaskModal(true);
+                  } else {
+                    router.replace('/tasks');
+                    setTimeout(() => setShowTaskModal(true), 100);
+                  }
+                }}
               >
                 <Ionicons name="add" size={32} color="#FFFFFF" />
               </TouchableOpacity>

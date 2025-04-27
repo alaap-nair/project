@@ -13,9 +13,10 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface NoteCardProps {
   note: Note;
+  onTranscriptPress?: (note: Note) => void;
 }
 
-export function NoteCard({ note }: NoteCardProps) {
+export function NoteCard({ note, onTranscriptPress }: NoteCardProps) {
   const subjects = useSubjectsStore((state) => state.subjects);
   const { deleteNote } = useNotesStore();
   const { user } = useAuthStore();
@@ -60,65 +61,69 @@ export function NoteCard({ note }: NoteCardProps) {
   };
 
   return (
-    <Link href={`/note/${note._id}`} asChild>
-      <Pressable style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>
-            {note.title}
+    <Pressable style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title} numberOfLines={1}>
+          {note.title}
+        </Text>
+        <View style={styles.headerActions}>
+          <Text style={styles.date}>
+            {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
           </Text>
-          <View style={styles.headerActions}>
-            <Text style={styles.date}>
-              {note.updatedAt ? format(new Date(note.updatedAt), 'MMM d, yyyy') : "No Date"}
-            </Text>
-            {hasPermission && (
-              <Pressable 
-                style={styles.deleteButton}
-                onPress={handleDeleteNote}
-              >
-                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-              </Pressable>
-            )}
-          </View>
+          {hasPermission && (
+            <Pressable 
+              style={styles.deleteButton}
+              onPress={handleDeleteNote}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+            </Pressable>
+          )}
         </View>
-        {subject && (
-          <View style={[styles.subjectTag, { backgroundColor: subject.color + '20' }]}>
-            <Text style={[styles.subjectText, { color: subject.color }]}>
-              {subject.name}
-            </Text>
+      </View>
+      {subject && (
+        <View style={[styles.subjectTag, { backgroundColor: subject.color + '20' }]}>
+          <Text style={[styles.subjectText, { color: subject.color }]}>
+            {subject.name}
+          </Text>
+        </View>
+      )}
+      
+      {/* Audio section */}
+      {note.audioUrls && note.audioUrls.length > 0 ? (
+        <View style={styles.audioSection}>
+          <View style={styles.audioHeader}>
+            <Ionicons name="musical-note" size={16} color="#007AFF" />
+            <Text style={styles.audioTitle}>Audio Recordings</Text>
           </View>
-        )}
-        
-        {/* Audio section */}
-        {note.audioUrl ? (
-          <View style={styles.audioSection}>
-            <View style={styles.audioHeader}>
-              <Ionicons name="musical-note" size={16} color="#007AFF" />
-              <Text style={styles.audioTitle}>Audio Recording</Text>
-            </View>
-            <AudioPlayer audioUri={note.audioUrl} />
-          </View>
-        ) : null}
-        
-        {/* Transcript section */}
-        {note.transcript ? (
-          <View style={styles.transcriptContainer}>
-            <Text style={styles.transcriptTitle}>Transcript</Text>
-            <Text style={styles.transcriptText} numberOfLines={3}>
-              {note.transcript}
-            </Text>
-          </View>
-        ) : (
-          hasPermission && (
-            <TranscriptionManager 
-              onTranscriptionComplete={handleTranscriptionComplete}
-              existingAudioUri={note.audioUrl}
-              noteId={note._id}
-            />
-          )
-        )}
-        <NoteSummary note={note} />
-      </Pressable>
-    </Link>
+          {note.audioUrls.map((url, idx) => (
+            <AudioPlayer key={idx} audioUri={url} />
+          ))}
+        </View>
+      ) : null}
+      
+      {/* Transcript section */}
+      {note.transcript ? (
+        <Pressable
+          style={styles.transcriptContainer}
+          onPress={() => onTranscriptPress && onTranscriptPress(note)}
+          android_ripple={{ color: '#E5E5EA' }}
+        >
+          <Text style={styles.transcriptTitle}>Transcript (Tap for AI Summary)</Text>
+          <Text style={styles.transcriptText} numberOfLines={3}>
+            {note.transcript}
+          </Text>
+        </Pressable>
+      ) : (
+        hasPermission && (
+          <TranscriptionManager 
+            onTranscriptionComplete={handleTranscriptionComplete}
+            existingAudioUri={note.audioUrls && note.audioUrls.length > 0 ? note.audioUrls[0] : undefined}
+            noteId={note._id}
+          />
+        )
+      )}
+      <NoteSummary note={note} />
+    </Pressable>
   );
 }
 

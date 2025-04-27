@@ -1,10 +1,12 @@
-import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, ActivityIndicator, ScrollView, Modal, TouchableOpacity } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import { useTasksStore, TaskPriority, TaskCategory } from '../../store/tasks';
 import { TaskCard } from '../../components/TaskCard';
+import TaskCreateForm from '../TaskCreateForm';
+import { useTaskModalStore } from '../../store/taskModal';
 
 type Filter = {
   priority?: TaskPriority;
@@ -19,6 +21,7 @@ export default function TasksScreen() {
   const [filter, setFilter] = useState<Filter>({});
   const [sortBy, setSortBy] = useState<SortBy>('deadline');
   const [loading, setLoading] = useState(true);
+  const { showTaskModal, setShowTaskModal } = useTaskModalStore();
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -140,6 +143,31 @@ export default function TasksScreen() {
         estimatedItemSize={120}
         contentContainerStyle={styles.list}
       />
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setShowTaskModal(true)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+      <Modal
+        visible={showTaskModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowTaskModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center' }}>
+          <View style={{ margin: 20, backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden', maxHeight: '90%' }}>
+            <TaskCreateForm
+              onSuccess={() => {
+                setShowTaskModal(false);
+                fetchTasks();
+              }}
+              onCancel={() => setShowTaskModal(false)}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -215,5 +243,22 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
+  },
+  fab: {
+    position: 'absolute',
+    right: 24,
+    bottom: 32,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 100,
   },
 }); 

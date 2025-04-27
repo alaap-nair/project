@@ -9,8 +9,9 @@ const noteSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  audioUrl: {
-    type: String
+  audioUrls: {
+    type: [String],
+    default: []
   },
   transcript: {
     type: String

@@ -75,9 +75,27 @@ export function NotesScreen() {
   };
 
   const handleNotePress = (note) => {
-    setSelectedNote(note);
-    setSummary('');
-    setSummaryModalVisible(true);
+    // If the note has a transcript, ask for confirmation before summarizing
+    if (note.transcript) {
+      Alert.alert(
+        'Summarize Transcript',
+        'Would you like to generate an AI summary of this transcript?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Yes', onPress: () => {
+              setSelectedNote(note);
+              setSummary('');
+              setSummaryModalVisible(true);
+              handleSummarize(note);
+            }
+          },
+        ]
+      );
+    } else {
+      setSelectedNote(note);
+      setSummary('');
+      setSummaryModalVisible(true);
+    }
   };
 
   const handleCloseSummaryModal = () => {
@@ -86,15 +104,16 @@ export function NotesScreen() {
     setSummary('');
   };
 
-  const handleSummarize = async () => {
-    if (!selectedNote) return;
+  const handleSummarize = async (noteArg) => {
+    const noteToSummarize = noteArg || selectedNote;
+    if (!noteToSummarize) return;
     setSummarizing(true);
     setSummary('');
     try {
-      const response = await fetch('http://localhost:3001/summarize', {
+      const response = await fetch('http://10.42.12.45:3001/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note: selectedNote.content }),
+        body: JSON.stringify({ note: noteToSummarize.transcript || noteToSummarize.content }),
       });
       const data = await response.json();
       if (data.summary) {
@@ -106,6 +125,24 @@ export function NotesScreen() {
       setSummary('Error connecting to summarization service.');
     }
     setSummarizing(false);
+  };
+
+  // Handler for transcript press
+  const handleTranscriptPress = (note) => {
+    Alert.alert(
+      'Summarize Transcript',
+      'Would you like to generate an AI summary of this transcript?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => {
+            setSelectedNote(note);
+            setSummary('');
+            setSummaryModalVisible(true);
+            handleSummarize(note);
+          }
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -146,11 +183,12 @@ export function NotesScreen() {
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={notes}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => (
             <TouchableOpacity onPress={() => handleNotePress(item)}>
-              <NoteCard note={item} />
+              <NoteCard note={item} onTranscriptPress={handleTranscriptPress} />
             </TouchableOpacity>
           )}
         />
@@ -170,7 +208,7 @@ export function NotesScreen() {
               <Text style={{ marginBottom: 16 }}>{selectedNote?.content}</Text>
               <TouchableOpacity
                 style={[styles.createButton, { marginBottom: 16, backgroundColor: '#6949FF' }]}
-                onPress={handleSummarize}
+                onPress={() => handleSummarize(selectedNote)}
                 disabled={summarizing}
               >
                 <Text style={styles.createButtonText}>{summarizing ? 'Summarizing...' : 'Summarize with AI'}</Text>
